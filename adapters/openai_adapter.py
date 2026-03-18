@@ -51,15 +51,15 @@ class OpenAIAdapter:
                             )
 
     def write_turn(self, user_text, assistant_text, timestamp, model, original_convo_id):
-        # Human-Readable Filename: YYYY-MM-DD-HHMM-[SLUG].md
         slug = self._generate_slug(user_text)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
         
-        is_noise = ContextCleaner.is_preamble(assistant_text)
+        # New: Check for both start and end noise
+        has_preamble = ContextCleaner.is_preamble(assistant_text)
+        has_postamble = ContextCleaner.is_postamble(assistant_text)
         
         os.makedirs(self.output_path, exist_ok=True)
         
-        # YAML Frontmatter
         frontmatter = [
             "---",
             f"uuid: urn:uuid:{uuid.uuid4()}",
@@ -67,7 +67,8 @@ class OpenAIAdapter:
             f"model: {model}",
             f"original_timestamp: {timestamp.isoformat()}",
             f"original_convo_id: {original_convo_id}",
-            f"preamble: {'true' if is_noise else 'false'}", # Default to false, let logic flag it later
+            f"preamble: {'true' if has_preamble else 'false'}",
+            f"postamble: {'true' if has_postamble else 'false'}",
             "---"
         ]
         
