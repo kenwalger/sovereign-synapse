@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from core.context_cleaner import ContextCleaner
 from datetime import datetime
 from slugify import slugify
 
@@ -54,6 +55,8 @@ class OpenAIAdapter:
         slug = self._generate_slug(user_text)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
         
+        is_noise = ContextCleaner.is_preamble(assistant_text)
+        
         os.makedirs(self.output_path, exist_ok=True)
         
         # YAML Frontmatter
@@ -64,7 +67,7 @@ class OpenAIAdapter:
             f"model: {model}",
             f"original_timestamp: {timestamp.isoformat()}",
             f"original_convo_id: {original_convo_id}",
-            "preamble: false", # Default to false, let logic flag it later
+            f"preamble: {'true' if is_noise else 'false'}", # Default to false, let logic flag it later
             "---"
         ]
         
