@@ -28,7 +28,7 @@ class ContextCleaner:
         if not text:
             return False
         sample = text[:200].strip()
-        return any(re.match(p, sample, re.IGNORECASE | re.DOTALL) for p in cls.PREAMBLE_PATTERNS)
+        return any(re.match(p, sample, re.IGNORECASE) for p in cls.PREAMBLE_PATTERNS)
 
     @classmethod
     def is_postamble(cls, text: str) -> bool:
@@ -37,4 +37,4 @@ class ContextCleaner:
             return False
         # Scan the last 200 characters using re.search for end-anchored patterns
         sample = text[-200:].strip()
-        return any(re.search(p, sample, re.IGNORECASE | re.DOTALL) for p in cls.POSTAMBLE_PATTERNS)
+        return any(re.search(p, sample, re.IGNORECASE) for p in cls.POSTAMBLE_PATTERNS)
