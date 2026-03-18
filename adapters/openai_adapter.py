@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+from core.context_cleaner import ContextCleaner
 from datetime import datetime
 from slugify import slugify
 
@@ -35,11 +36,16 @@ class OpenAIAdapter:
                     # Find children (replies)
                     for child_id in node.get('children', []):
                         child_node = mapping.get(child_id)
+                        if not child_node:
+                            continue
                         child_msg = child_node.get('message')
-                        
+
                         if child_msg and child_msg.get('author', {}).get('role') == 'assistant':
                             assistant_text = "".join(child_msg.get('content', {}).get('parts', []))
-                            timestamp = datetime.fromtimestamp(message.get('create_time'))
+                            create_time = message.get('create_time')
+                            if create_time is None:
+                                create_time = datetime.now().timestamp()
+                            timestamp = datetime.fromtimestamp(create_time)
                             
                             self.write_turn(
                                 user_text=user_text,
@@ -50,13 +56,14 @@ class OpenAIAdapter:
                             )
 
     def write_turn(self, user_text, assistant_text, timestamp, model, original_convo_id):
-        # Human-Readable Filename: YYYY-MM-DD-HHMM-[SLUG].md
         slug = self._generate_slug(user_text)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
         
+        has_preamble = ContextCleaner.is_preamble(assistant_text)
+        has_postamble = ContextCleaner.is_postamble(assistant_text)
+        
         os.makedirs(self.output_path, exist_ok=True)
         
-        # YAML Frontmatter
         frontmatter = [
             "---",
             f"uuid: urn:uuid:{uuid.uuid4()}",
@@ -64,7 +71,8 @@ class OpenAIAdapter:
             f"model: {model}",
             f"original_timestamp: {timestamp.isoformat()}",
             f"original_convo_id: {original_convo_id}",
-            "preamble: false", # Default to false, let logic flag it later
+            f"preamble: {'true' if has_preamble else 'false'}",
+            f"postamble: {'true' if has_postamble else 'false'}",
             "---"
         ]
         
