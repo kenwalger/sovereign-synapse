@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Sovereign Synapse Data
+raw_data/
+vault/synapses/
+
+# Editor
+.vscode/
+
+commit-message.txt
