@@ -36,11 +36,16 @@ class OpenAIAdapter:
                     # Find children (replies)
                     for child_id in node.get('children', []):
                         child_node = mapping.get(child_id)
+                        if not child_node:
+                            continue
                         child_msg = child_node.get('message')
-                        
+
                         if child_msg and child_msg.get('author', {}).get('role') == 'assistant':
                             assistant_text = "".join(child_msg.get('content', {}).get('parts', []))
-                            timestamp = datetime.fromtimestamp(message.get('create_time'))
+                            create_time = message.get('create_time')
+                            if create_time is None:
+                                create_time = datetime.now().timestamp()
+                            timestamp = datetime.fromtimestamp(create_time)
                             
                             self.write_turn(
                                 user_text=user_text,
@@ -54,7 +59,6 @@ class OpenAIAdapter:
         slug = self._generate_slug(user_text)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
         
-        # New: Check for both start and end noise
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)
         

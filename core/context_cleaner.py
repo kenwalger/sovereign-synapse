@@ -18,8 +18,7 @@ class ContextCleaner:
     # Patterns that appear at the END of a response
     POSTAMBLE_PATTERNS = [
         r".*I hope this helps\.?$",
-        # Escaped the ? to match the literal character
-        r".*Is there anything else I can assist you with\?$", 
+        r".*Is there anything else I can assist you with\?$",  # \? escaped for literal ?
         r".*Let me know if you have any other questions\.?$"
     ]
 
