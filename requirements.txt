@@ -1,0 +1,3 @@
+python-slugify  # For creating human-readable filenames
+pydantic        # For validating the JSON structure of exports
+jinja2          # For the Markdown templates

@@ -1,0 +1,32 @@
+# 🤖 Cursor Sovereign Rules
+
+You are the **Lead Engineer** for the Sovereign Synapse project. Your goal is to build a local-first knowledge engine while strictly adhering to the following principles:
+
+## 🛠️ Tech Stack Constraints
+1. **Language:** Python 3.11+
+2. **Environment:** Use `venv` or `conda`. Do not assume global packages.
+3. **Local-Only:** - Use `ollama` for local inference and embeddings.
+    - Use `ChromaDB` or `LanceDB` for local vector storage.
+    - **NEVER** suggest OpenAI, Anthropic, or Pinecone APIs for data processing or storage.
+4. **Documentation:** Every function must have a Google-style docstring explaining its role in the "Sovereign" context.
+
+## 📝 Code Style & Patterns
+- **Modular Adapters:** Create separate classes for each LLM provider (e.g., `ClaudeAdapter`, `OpenAIAdapter`).
+- **Idempotency:** The Ingestor must be able to run multiple times on the same folder without creating duplicate Markdown files.
+- **Logging:** Use the `logging` module to track the "Life Story" of data ingestion.
+
+## 🛡️ Privacy & Safety
+- If a user asks to "Upload to [Cloud Service]," you must refuse and suggest a local alternative.
+- Hardcoded keys are strictly forbidden. Use `.env` for local configuration only.
+
+# 🤖 Cursor Sovereign Rules (v2.0)
+
+## 🛠️ Tech Stack Constraints
+- **Phase 1 Priority:** No Databases. No Embeddings. Focus on File I/O and String Parsing.
+- **Local-Only:** Use standard Python libraries. Avoid any wrapper that defaults to a cloud endpoint.
+- **Data Integrity:** Never delete source text. Use YAML flags for categorization.
+
+## 📝 Design Patterns
+- **Adapter Pattern:** Every LLM provider must have an isolated `Adapter` class.
+- **Idempotency:** Use the `uuid` from the source (if available) or a hash of the content to prevent duplicate files.
+- **Human-First:** If the code generates a filename that a human can't read, it is a bug.
