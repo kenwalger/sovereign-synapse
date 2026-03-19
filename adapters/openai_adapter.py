@@ -23,9 +23,9 @@ _logger = logging.getLogger(__name__)
 def _safe_join_parts(parts: list[object]) -> str:
     """Join message parts into human-readable text; avoid dumping raw dict reprs.
 
-    For dict parts (e.g. tool_use, tool_result): extract 'text' or 'content' when
-    available. For complex tool results without readable text, wrap in a json
-    code block. Skips empty or whitespace-only parts to avoid noise in the index.
+    For dict parts: extract 'text' or 'content'. If val is a string, use it.
+    If val is non-string (list, dict, etc.), json.dumps(val) in a code block.
+    Nothing is dropped. Skips empty or whitespace-only strings.
     """
     result: list[str] = []
     for p in parts:
@@ -38,6 +38,8 @@ def _safe_join_parts(parts: list[object]) -> str:
             val = text if text is not None else content
             if isinstance(val, str) and val.strip():
                 result.append(val.strip())
+            elif val is not None and not (isinstance(val, str) and not val.strip()):
+                result.append(f"\n\n```json\n{json.dumps(val, indent=2)}\n```\n\n")
             elif val is None:
                 result.append(f"\n\n```json\n{json.dumps(p, indent=2)}\n```\n\n")
         else:
@@ -130,8 +132,6 @@ class OpenAIAdapter(BaseAdapter):
                             convo_id = convo.get("id")
                             if convo_id is None:
                                 convo_id = title
-                            if convo_id is None or convo_id == "":
-                                convo_id = f"hash_{hashlib.sha256(json.dumps(mapping, sort_keys=True).encode()).hexdigest()[:12]}"
                             original_convo_id = str(convo_id)
                             model = child_msg.get("metadata", {}).get("model_slug", "gpt-unknown")
                             turn_data = (

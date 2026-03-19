@@ -17,7 +17,36 @@ import ollama
 # Default embedding model for local inference
 EMBEDDING_MODEL = "mxbai-embed-large"
 
+# mxbai-embed-large: aggressive limits for 512-token ceiling
+CHUNK_SIZE = 1500  # ~400 tokens
+CHUNK_OVERLAP = 200
+HARD_TRUNCATE_CHARS = 1000  # last resort when chunk still causes 400
+
 _logger = logging.getLogger(__name__)
+
+
+def _chunk_text(text: str) -> list[str]:
+    """Split text into chunks of CHUNK_SIZE chars with CHUNK_OVERLAP.
+
+    Args:
+        text: Input text to chunk.
+
+    Returns:
+        List of chunk strings.
+    """
+    if not text.strip():
+        return []
+    if len(text) <= CHUNK_SIZE:
+        return [text]
+    chunks: list[str] = []
+    start = 0
+    step = CHUNK_SIZE - CHUNK_OVERLAP
+    while start < len(text):
+        chunk = text[start : start + CHUNK_SIZE]
+        if chunk.strip():
+            chunks.append(chunk)
+        start += step
+    return chunks
 
 
 def _parse_synapse_markdown(file_path: str) -> tuple[dict[str, Any], str]:
@@ -108,6 +137,9 @@ class VectorStore:
             A list of floats representing the embedding vector, or empty list
             if the response contains no embeddings.
         """
+        if len(text) > CHUNK_SIZE:
+            text = text[:CHUNK_SIZE]
+            _logger.info("Truncating text to %d chars for embedding", CHUNK_SIZE)
         response = ollama.embed(model=self._embedding_model, input=text)
         embeddings = response.embeddings if response.embeddings else []
         if not embeddings:
@@ -139,17 +171,25 @@ class VectorStore:
         if not doc_id:
             raise ValueError(f"No uuid in frontmatter for {file_path}")
 
+        chunks = _chunk_text(body)
+        if not chunks:
+            _logger.warning("Empty body for %s; skipping", file_path)
+            return ("FAILED", doc_id)
+
         existing = self._collection.get(ids=[doc_id])
         if existing and existing.get("ids") and len(existing["ids"]) > 0:
             return ("SKIPPED", doc_id)
-
-        embedding = self._embed(body)
-        if not embedding:
-            _logger.warning(
-                "Empty embeddings for %s; skipping upsert",
-                file_path,
+        if len(chunks) > 1:
+            chunk0_id = f"{doc_id}#chunk-0"
+            existing_chunk0 = self._collection.get(ids=[chunk0_id])
+            if existing_chunk0 and existing_chunk0.get("ids") and len(existing_chunk0["ids"]) > 0:
+                return ("SKIPPED", doc_id)
+            filename = Path(file_path).name
+            _logger.info(
+                "Splitting %s into %d chunks due to length.",
+                filename,
+                len(chunks),
             )
-            return ("FAILED", doc_id)
 
         # ChromaDB metadata values must be str, int, float, or bool
         safe_metadata: dict[str, str | int | float | bool] = {}
@@ -161,12 +201,71 @@ class VectorStore:
             else:
                 safe_metadata[key] = str(value)
 
-        self._collection.upsert(
-            ids=[doc_id],
-            embeddings=[embedding],
-            documents=[body],
-            metadatas=[safe_metadata],
-        )
+        def _embed_with_retry(chunk: str, chunk_idx: int) -> list[float] | None:
+            """Embed chunk; on 400, retry with hard truncation to 1000 chars."""
+            try:
+                return self._embed(chunk)
+            except ollama.ResponseError as e:
+                if e.status_code != 400:
+                    raise
+                if len(chunk) <= HARD_TRUNCATE_CHARS:
+                    raise
+                fallback = chunk[:HARD_TRUNCATE_CHARS]
+                _logger.warning(
+                    "Chunk %d for %s caused 400; retrying with %d-char truncation",
+                    chunk_idx + 1,
+                    file_path,
+                    HARD_TRUNCATE_CHARS,
+                )
+                try:
+                    return self._embed(fallback)
+                except ollama.ResponseError as e2:
+                    if e2.status_code == 400:
+                        _logger.critical(
+                            "Chunk %d for %s still fails after truncation: %s",
+                            chunk_idx + 1,
+                            file_path,
+                            e2,
+                        )
+                        return None
+                    raise
+
+        try:
+            if len(chunks) == 1:
+                embedding = _embed_with_retry(chunks[0], 0)
+                if not embedding:
+                    return ("FAILED", doc_id)
+                self._collection.upsert(
+                    ids=[doc_id],
+                    embeddings=[embedding],
+                    documents=[chunks[0]],
+                    metadatas=[safe_metadata],
+                )
+            else:
+                upserted = 0
+                for i, chunk in enumerate(chunks):
+                    embedding = _embed_with_retry(chunk, i)
+                    if not embedding:
+                        return ("FAILED", doc_id)
+                    chunk_id = f"{doc_id}#chunk-{i}"
+                    part_meta = {**safe_metadata, "part": i}
+                    self._collection.upsert(
+                        ids=[chunk_id],
+                        embeddings=[embedding],
+                        documents=[chunk],
+                        metadatas=[part_meta],
+                    )
+                    upserted += 1
+        except ollama.ResponseError as e:
+            if e.status_code == 400:
+                _logger.warning(
+                    "Ollama 400 (context length?) for %s: %s; skipping",
+                    file_path,
+                    e,
+                )
+            else:
+                raise
+            return ("FAILED", doc_id)
 
         return ("SUCCESS", doc_id)
 
@@ -205,7 +304,7 @@ class VectorStore:
         ids = results["ids"][0]
         documents = results["documents"][0] if results["documents"] else [""] * len(ids)
         metadatas = results["metadatas"][0] if results["metadatas"] else [{}] * len(ids)
-        distances = results["distances"][0] if results.get("distances") else [None] * len(ids)
+        distances = results["distances"][0] if results["distances"] else [None] * len(ids)
 
         return [
             {

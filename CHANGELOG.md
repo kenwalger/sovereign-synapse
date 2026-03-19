@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.14.0] - 2026-03-18
+
+### Changed
+- **core/vector_store.py**: Aggressive chunking — 1500 chars, 200-char overlap (~400 tokens, safety for 512 limit).
+- **core/vector_store.py**: Chunk IDs: doc_id#chunk-0, doc_id#chunk-1 (was _part1, _part2).
+- **core/vector_store.py**: Hard truncation — on 400, retry with 1000-char truncation; if still fails, log CRITICAL, return FAILED.
+- **core/vector_store.py**: INFO log when splitting: "Splitting [filename] into [N] chunks due to length."
+
+## [0.13.0] - 2026-03-18
+
+### Added
+- **core/vector_store.py**: Truncation/chunking — _embed truncates to 2000 words; add_synapse chunks long bodies into doc_id_part1, doc_id_part2, etc.
+- **core/vector_store.py**: _chunk_text() helper; MAX_WORDS_PER_CHUNK = 2000.
+- **core/vector_store.py**: try/except for ollama.ResponseError 400 — log WARNING, return FAILED; prevents loop crash on context-length errors.
+- **tests/test_vector_store.py**: test_add_synapse_chunks_long_document.
+
+### Verified
+- **main.py**: logging.basicConfig(level=logging.INFO) — truncation/chunk logs visible.
+
+## [0.12.0] - 2026-03-18 (Golden Build)
+
+### Fixed
+- **adapters/openai_adapter.py**: Zero-data-loss ingress — when val (text/content) is not a string (e.g. list), json.dumps(val) in code block instead of dropping.
+- **adapters/openai_adapter.py**: Removed unreachable convo_id hash fallback; trust title variable.
+- **core/vector_store.py**: Consistent query access — use results["distances"] instead of results.get("distances").
+
+### Added
+- **tests/test_vector_store.py**: test_parse_list_content_part_appears_as_json_block — verifies list content appears as JSON block, not dropped.
+
 ## [0.11.0] - 2026-03-18
 
 ### Fixed

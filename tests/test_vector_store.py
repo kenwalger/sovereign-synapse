@@ -15,7 +15,7 @@ import frontmatter
 import pytest
 
 from adapters.openai_adapter import OpenAIAdapter
-from core.vector_store import VectorStore
+from core.vector_store import CHUNK_SIZE, VectorStore
 
 
 @pytest.fixture
@@ -274,6 +274,54 @@ def test_parse_handles_poisoned_export_with_non_string_parts(tmp_path: Path) -> 
     content = md_files[0].read_text(encoding="utf-8")
     assert "Hello" in content
     assert "Hi!" in content
+
+
+def test_parse_list_content_part_appears_as_json_block(tmp_path: Path) -> None:
+    """Verify parts with list content (e.g. content: [\"a\", \"b\"]) are not dropped.
+
+    When content field is a list, _safe_join_parts must json.dumps it into a
+    code block instead of silently dropping it (zero-data-loss).
+    """
+    list_content_json = tmp_path / "list_content.json"
+    list_content_json.write_text(
+        """[
+  {
+    "id": "conv-list",
+    "title": "List Content",
+    "mapping": {
+      "n1": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {"parts": ["Question: ", {"content": ["item1", "item2", "item3"]}]},
+          "create_time": 1719000000
+        },
+        "children": ["n2"]
+      },
+      "n2": {
+        "message": {
+          "author": {"role": "assistant"},
+          "content": {"parts": ["Answer.", {"content": [{"nested": "data"}]}]}
+        }
+      }
+    }
+  }
+]
+""",
+        encoding="utf-8",
+    )
+
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    adapter.parse(str(list_content_json))
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) >= 1
+    content = md_files[0].read_text(encoding="utf-8")
+    assert "Question:" in content
+    assert "Answer." in content
+    assert "```json" in content
+    assert "item1" in content
+    assert "item2" in content
+    assert "nested" in content
 
 
 def test_write_turn_original_timestamp_is_utc_iso(tmp_path: Path) -> None:
@@ -537,6 +585,42 @@ def test_add_synapse_returns_failed_when_embedding_empty(
 
     assert status == "FAILED"
     assert doc_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
+def test_add_synapse_chunks_long_document(
+    tmp_path: Path,
+    temp_persist_dir: str,
+) -> None:
+    """Verify add_synapse chunks long documents into doc_id#chunk-0, doc_id#chunk-1."""
+    long_body = "x" * (CHUNK_SIZE * 2 + 100)  # > 2 chunks
+    content = f"""---
+uuid: urn:uuid:c1d2e3f4-a5b6-7890-cdef-123456789abc
+source: gpt_export
+model: gpt-4o
+---
+### User
+Long question.
+
+### Assistant
+{long_body}
+"""
+    synapse_path = tmp_path / "long.md"
+    synapse_path.write_text(content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status, doc_id = store.add_synapse(str(synapse_path))
+
+    assert status == "SUCCESS"
+    assert doc_id == "c1d2e3f4-a5b6-7890-cdef-123456789abc"
+    assert mock_embed.call_count >= 2  # 2+ chunks
+    ids = store._collection.get()["ids"]
+    assert "c1d2e3f4-a5b6-7890-cdef-123456789abc#chunk-0" in ids
+    assert "c1d2e3f4-a5b6-7890-cdef-123456789abc#chunk-1" in ids
 
 
 def test_vector_store_query_empty_collection_returns_empty_list(
