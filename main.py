@@ -44,7 +44,11 @@ def cmd_index(args: argparse.Namespace) -> None:
         return
 
     print("🧠 Indexing synapses into vector store...")
-    store = VectorStore(persist_directory=chroma_dir)
+    try:
+        store = VectorStore(persist_directory=chroma_dir)
+    except Exception as e:
+        print(f"❌ Failed to initialize vector store: {e}")
+        raise SystemExit(1)
 
     count = 0
     for path in sorted(synapse_dir.glob("*.md")):

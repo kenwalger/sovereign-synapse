@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 import frontmatter
 from pathlib import Path
@@ -269,6 +269,27 @@ def test_parse_handles_poisoned_export_with_non_string_parts(tmp_path: Path) -> 
     content = md_files[0].read_text(encoding="utf-8")
     assert "Hello" in content
     assert "Hi!" in content
+
+
+def test_write_turn_original_timestamp_is_utc_iso(tmp_path: Path) -> None:
+    """Verify original_timestamp in frontmatter is ISO format with +00:00 UTC suffix."""
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    timestamp = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    adapter.write_turn(
+        user_text="Test?",
+        assistant_text="Answer.",
+        timestamp=timestamp,
+        model="gpt-4o",
+        original_convo_id="test-convo",
+    )
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) == 1
+    post = frontmatter.load(md_files[0])
+    ts = post.get("original_timestamp")
+    assert ts is not None
+    assert "+00:00" in ts or ts.endswith("Z")
 
 
 def test_parse_handles_none_convo_id(tmp_path: Path) -> None:

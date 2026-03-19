@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+from typing import Any
 import json
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 import frontmatter
 from slugify import slugify
@@ -79,6 +80,7 @@ class OpenAIAdapter(BaseAdapter):
                 if message.get("author", {}).get("role") != "user":
                     continue
 
+                turn_data = None
                 try:
                     user_text = _safe_join_parts(
                         message.get("content", {}).get("parts", []),
@@ -96,8 +98,11 @@ class OpenAIAdapter(BaseAdapter):
                             )
                             create_time = message.get("create_time")
                             if create_time is None:
-                                create_time = datetime.now().timestamp()
-                            timestamp = datetime.fromtimestamp(create_time)
+                                create_time = datetime.now(timezone.utc).timestamp()
+                            timestamp = datetime.fromtimestamp(
+                                create_time,
+                                tz=timezone.utc,
+                            )
 
                             convo_id = convo.get("id")
                             if convo_id is None:
@@ -105,18 +110,30 @@ class OpenAIAdapter(BaseAdapter):
                             if convo_id is None or convo_id == "":
                                 convo_id = f"hash_{hashlib.sha256(str(mapping)[:500].encode()).hexdigest()[:12]}"
                             original_convo_id = str(convo_id)
-                            self.write_turn(
-                                user_text=user_text,
-                                assistant_text=assistant_text,
-                                timestamp=timestamp,
-                                model=child_msg.get("metadata", {}).get("model_slug", "gpt-unknown"),
-                                original_convo_id=original_convo_id,
+                            model = child_msg.get("metadata", {}).get("model_slug", "gpt-unknown")
+                            turn_data = (
+                                user_text,
+                                assistant_text,
+                                timestamp,
+                                model,
+                                original_convo_id,
                             )
+                            break
                 except Exception as e:
                     _logger.warning(
                         "Skipping malformed turn at node %s: %s",
                         node_id,
                         e,
+                    )
+                    continue
+
+                if turn_data:
+                    self.write_turn(
+                        user_text=turn_data[0],
+                        assistant_text=turn_data[1],
+                        timestamp=turn_data[2],
+                        model=turn_data[3],
+                        original_convo_id=turn_data[4],
                     )
 
     def write_turn(
@@ -126,6 +143,7 @@ class OpenAIAdapter(BaseAdapter):
         timestamp: datetime,
         model: str,
         original_convo_id: str,
+        **kwargs: Any,
     ) -> None:
         """Write a single user/assistant turn to a synapse Markdown file.
 

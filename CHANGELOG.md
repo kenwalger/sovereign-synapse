@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.9] - 2026-03-18
+
+### Fixed
+- **adapters/openai_adapter.py**: Narrow exception scope — only data extraction (parsing JSON nodes) wrapped in try/except; `write_turn()` moved outside so disk/IO errors propagate to the user instead of being logged as "malformed turn."
+- **adapters/openai_adapter.py**: Enforce timezone determinism — `datetime.fromtimestamp(create_time, tz=timezone.utc)` for cross-platform UUID/filename consistency.
+- **adapters/openai_adapter.py**: LSP — `write_turn` signature matches `BaseAdapter` including `**kwargs: Any`.
+- **main.py**: Wrap `VectorStore()` in try/except; ChromaDB init failures (e.g., locked DB) print a clean error and exit gracefully.
+
+### Added
+- **tests/test_vector_store.py**: `test_write_turn_original_timestamp_is_utc_iso` — verifies `original_timestamp` in frontmatter is ISO with `+00:00` UTC suffix.
+
 ## [0.3.8] - 2026-03-18
 
 ### Fixed
