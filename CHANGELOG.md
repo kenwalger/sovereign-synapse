@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.5] - 2026-03-18
+
+### Fixed
+- **core/vector_store.py**: Empty collection guard — `query()` returns `[]` when `count() == 0` to avoid ChromaDB `ValueError` for `limit=0`.
+- **adapters/openai_adapter.py**: ID guard — explicit `if convo.get('id') is None`; fallback to title, then hash of mapping content when both are missing.
+- **README.md**: Example uses dict access `result['document']` and `result['metadata']` instead of attribute notation.
+- **README.md**: Git clone command uses plain URL (no Markdown link syntax in code block).
+
+### Changed
+- **requirements.txt**: Moved pytest to `requirements-dev.txt`; all packages now have explicit versions.
+- **requirements-dev.txt**: New file including pytest for development.
+
+### Added
+- **tests/test_vector_store.py**: `test_vector_store_query_empty_collection_returns_empty_list` — verifies empty store returns `[]` without crashing.
+
 ## [0.3.4] - 2026-03-18
 
 ### Fixed

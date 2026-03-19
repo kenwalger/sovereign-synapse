@@ -34,7 +34,7 @@ ollama pull mxbai-embed-large
 ### 2. Installation
 
 ```bash
-git clone [https://github.com/yourusername/sovereign-synapse.git](https://github.com/yourusername/sovereign-synapse.git)
+git clone https://github.com/yourusername/sovereign-synapse.git
 cd sovereign-synapse
 pip install -r requirements.txt
 ```
@@ -60,8 +60,8 @@ store = VectorStore()
 results = store.query("What were those sensors for tracking gait?", n_results=3)
 
 for result in results:
-    print(f"Match found in: {result.metadata['original_timestamp']}")
-    print(result.document[:200] + "...")
+    print(f"Match found in: {result['metadata']['original_timestamp']}")
+    print(result['document'][:200] + "...")
 ```
 
 ---

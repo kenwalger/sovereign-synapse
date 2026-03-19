@@ -179,9 +179,12 @@ class VectorStore:
         if not embedding:
             return []
 
+        if self._collection.count() == 0:
+            return []
+
         results = self._collection.query(
             query_embeddings=[embedding],
-            n_results=min(n_results, self._collection.count() or n_results),
+            n_results=min(n_results, self._collection.count()),
             include=["documents", "metadatas", "distances"],
         )
 

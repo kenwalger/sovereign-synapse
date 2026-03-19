@@ -304,6 +304,26 @@ def test_write_turn_same_minute_different_text_produces_distinct_files(tmp_path:
     assert "Second question?" in contents[1] and "First question?" not in contents[1]
 
 
+def test_vector_store_query_empty_collection_returns_empty_list(
+    temp_persist_dir: str,
+) -> None:
+    """Verify query on empty VectorStore returns [] without crashing.
+
+    ChromaDB raises ValueError for n_results=0 when querying; the empty
+    collection guard prevents this.
+
+    Args:
+        temp_persist_dir: Temporary ChromaDB persistence path.
+    """
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = SimpleNamespace(embeddings=[[0.1] * 1024])
+
+        store = VectorStore(persist_directory=temp_persist_dir)
+        results = store.query("any query", n_results=5)
+
+    assert results == []
+
+
 def test_vector_store_query_returns_top_matches(
     tmp_path: Path,
     temp_persist_dir: str,

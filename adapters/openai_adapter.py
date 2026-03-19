@@ -84,7 +84,12 @@ class OpenAIAdapter:
                                 create_time = datetime.now().timestamp()
                             timestamp = datetime.fromtimestamp(create_time)
                             
-                            original_convo_id = convo.get("id") or convo.get("title", "unknown_convo")
+                            convo_id = convo.get("id")
+                            if convo_id is None:
+                                convo_id = convo.get("title")
+                            if convo_id is None or convo_id == "":
+                                convo_id = f"hash_{hashlib.sha256(str(mapping)[:500].encode()).hexdigest()[:12]}"
+                            original_convo_id = str(convo_id)
                             self.write_turn(
                                 user_text=user_text,
                                 assistant_text=assistant_text,
