@@ -210,7 +210,7 @@ class OpenAIAdapter(BaseAdapter):
                 existing = f.read()
             # Compare via .strip(): leaves file untouched if the only difference
             # is trailing whitespace; skips overwrite to protect manual edits.
-            if existing.strip() != (content + "\n").strip():
+            if existing.strip() != content.strip():
                 _logger.warning(
                     "Skipping overwrite of %s: file exists with different content (manual edits protected)",
                     filename,

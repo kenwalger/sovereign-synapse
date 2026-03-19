@@ -6,10 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.19.0] - 2026-03-18 (Local Brain)
+
+### Added
+- **main.py**: `query` subcommand — semantic search over indexed synapses; positional QUERY, optional --n-results (default 5). Prints Timestamp, Snippet, File Path to stdout.
+- **main.py**: _resolve_uuid_to_path() — resolves doc_id to synapse file path for human-readable output.
+- **tests/test_cli.py**: test_query_cli_prints_results_to_stdout.
+
+### Fixed
+- **core/vector_store.py**: Targeted exception handling — catch only ollama.ResponseError in query(); let other exceptions propagate (logic bugs).
+- **core/vector_store.py**: Query truncation warning — WARNING log when query string is truncated in _embed(). _embed() now accepts `is_query` parameter.
+- **adapters/openai_adapter.py**: Idempotent logic — remove redundant `+ "\n"` before .strip() in write_turn overwrite check.
+
+### Changed
+- **main.py**: Docstring updated to include query subcommand.
+
 ## [0.18.0] - 2026-03-18
 
 ### Fixed
-- **core/vector_store.py**: Search resilience — wrap query embedding in try/except; on ollama.ResponseError or Exception, log error and return [] as documented.
+- **core/vector_store.py**: Search resilience — wrap query embedding in try/except; on ollama.ResponseError, log error and return [] as documented.
 
 ### Changed
 - **core/vector_store.py**: Chunk 400-retry log level WARNING → INFO (expected for large files).

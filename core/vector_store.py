@@ -131,11 +131,12 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"},
         )
 
-    def _embed(self, text: str) -> list[float]:
+    def _embed(self, text: str, *, is_query: bool = False) -> list[float]:
         """Generate embedding vector for the given text via Ollama.
 
         Args:
             text: Input text to embed.
+            is_query: If True, log WARNING when truncating (query strings).
 
         Returns:
             A list of floats representing the embedding vector, or empty list
@@ -143,7 +144,10 @@ class VectorStore:
         """
         if len(text) > CHUNK_SIZE:
             text = text[:CHUNK_SIZE]
-            _logger.info("Truncating text to %d chars for embedding", CHUNK_SIZE)
+            if is_query:
+                _logger.warning("Query string truncated to %d chars for embedding", CHUNK_SIZE)
+            else:
+                _logger.info("Truncating text to %d chars for embedding", CHUNK_SIZE)
         response = ollama.embed(model=self._embedding_model, input=text)
         embeddings = response.embeddings if response.embeddings else []
         if not embeddings:
@@ -291,8 +295,8 @@ class VectorStore:
             return []
 
         try:
-            embedding = self._embed(text)
-        except (ollama.ResponseError, Exception) as e:
+            embedding = self._embed(text, is_query=True)
+        except ollama.ResponseError as e:
             _logger.error("Query embedding failed: %s", e)
             return []
         if not embedding:

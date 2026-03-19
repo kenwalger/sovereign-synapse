@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from main import cmd_index
+from main import cmd_index, cmd_query
 
 
 def _run_cli(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -157,3 +157,56 @@ Test response.
     captured = capsys.readouterr()
     assert "Embedding failed" in captured.out
     assert "failed 1" in captured.out
+
+
+def test_query_cli_prints_results_to_stdout(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify query subcommand prints output to stdout correctly.
+
+    Indexes a synapse, then runs query; asserts Timestamp, Snippet, File appear.
+    """
+    synapse_dir = tmp_path / "synapses"
+    synapse_dir.mkdir()
+    synapse_file = synapse_dir / "test.md"
+    synapse_file.write_text(
+        """---
+uuid: urn:uuid:q1e2r3t4-y5u6-7890-abcd-ef1234567890
+source: gpt_export
+model: gpt-4o
+original_timestamp: 2025-06-06T11:27:59.564000
+---
+### User
+What wearable provides raw sensor data?
+
+### Assistant
+The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
+""",
+        encoding="utf-8",
+    )
+
+    chroma_dir = str(tmp_path / "chroma")
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+
+        cmd_index(argparse.Namespace(synapses_dir=str(synapse_dir), chroma_dir=chroma_dir))
+        capsys.readouterr()
+
+        cmd_query(
+            argparse.Namespace(
+                query_string="wearable sensor data",
+                n_results=3,
+                synapses_dir=str(synapse_dir),
+                chroma_dir=chroma_dir,
+            ),
+        )
+
+    captured = capsys.readouterr()
+    assert "Timestamp" in captured.out
+    assert "Snippet" in captured.out
+    assert "File" in captured.out
+    assert "Movesense" in captured.out or "sensor" in captured.out.lower()

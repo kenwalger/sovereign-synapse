@@ -727,9 +727,11 @@ def test_query_returns_empty_on_embedding_failure(
 ) -> None:
     """Verify query() returns [] when embedding fails instead of crashing.
 
-    When Ollama raises during search (e.g. unreachable, 500), query must
+    When Ollama raises ResponseError during search (e.g. 500), query must
     log the error and return [] as documented.
     """
+    import ollama
+
     synapse_path = tmp_path / "synapse.md"
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
@@ -742,7 +744,7 @@ def test_query_returns_empty_on_embedding_failure(
         call_count[0] += 1
         if call_count[0] == 1:
             return mock_response  # add_synapse
-        raise ConnectionError("Connection refused")  # query
+        raise ollama.ResponseError("Connection refused", 500)  # query
 
     with patch("core.vector_store.ollama.embed") as mock_embed:
         mock_embed.side_effect = embed_side_effect

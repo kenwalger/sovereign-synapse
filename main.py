@@ -3,6 +3,7 @@
 Subcommands:
   ingest PATH [-o OUTPUT]  Parse export JSON into Markdown turns.
   index [--synapses-dir DIR] [--chroma-dir DIR]  Index Markdown into vector store.
+  query QUERY_STRING [--n-results N]  Semantic search over indexed synapses.
 """
 
 from __future__ import annotations
@@ -11,8 +12,12 @@ import argparse
 import logging
 from pathlib import Path
 
+import frontmatter
+
 from adapters import OpenAIAdapter
 from core.vector_store import VectorStore
+
+SNIPPET_MAX_LEN = 200
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -82,6 +87,60 @@ def cmd_index(args: argparse.Namespace) -> None:
     )
 
 
+def _resolve_uuid_to_path(synapse_dir: Path, doc_id: str) -> str | None:
+    """Find synapse file path by uuid (short or urn form)."""
+    for path in synapse_dir.glob("*.md"):
+        try:
+            post = frontmatter.load(path)
+            uuid_val = post.metadata.get("uuid")
+            if uuid_val is None:
+                continue
+            short = str(uuid_val).replace("urn:uuid:", "")
+            if short == doc_id:
+                return str(path)
+        except Exception:
+            continue
+    return None
+
+
+def cmd_query(args: argparse.Namespace) -> None:
+    """Run semantic search and print results to stdout.
+
+    Args:
+        args: Parsed arguments with query_string, n_results, synapses_dir, chroma_dir.
+    """
+    query_string = args.query_string
+    n_results = args.n_results
+    synapse_dir = Path(args.synapses_dir)
+    chroma_dir = args.chroma_dir
+
+    try:
+        store = VectorStore(persist_directory=chroma_dir)
+    except Exception as e:
+        print(f"❌ Failed to initialize vector store: {e}")
+        raise SystemExit(1)
+
+    results = store.query(query_string, n_results=n_results)
+    if not results:
+        print("No results found.")
+        return
+
+    print(f"🔍 Top {len(results)} matches for: {query_string}\n")
+    for i, hit in enumerate(results, 1):
+        meta = hit.get("metadata") or {}
+        timestamp = meta.get("original_timestamp", "—")
+        doc = hit.get("document") or ""
+        snippet = doc[:SNIPPET_MAX_LEN] + ("..." if len(doc) > SNIPPET_MAX_LEN else "")
+        file_path = _resolve_uuid_to_path(synapse_dir, hit["id"]) if synapse_dir.exists() else None
+        path_str = file_path or hit["id"]
+
+        print(f"--- Result {i} ---")
+        print(f"Timestamp: {timestamp}")
+        print(f"Snippet: {snippet}")
+        print(f"File: {path_str}")
+        print()
+
+
 def main() -> None:
     """Main entry point with argparse subcommands."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -118,6 +177,30 @@ def main() -> None:
         help="ChromaDB persistence directory (default: vault/chroma)",
     )
     index_parser.set_defaults(func=cmd_index)
+
+    query_parser = subparsers.add_parser("query", help="Semantic search over indexed synapses")
+    query_parser.add_argument(
+        "query_string",
+        metavar="QUERY",
+        help="Search query text",
+    )
+    query_parser.add_argument(
+        "--n-results",
+        type=int,
+        default=5,
+        help="Maximum number of results (default: 5)",
+    )
+    query_parser.add_argument(
+        "--synapses-dir",
+        default="vault/synapses",
+        help="Directory containing synapse Markdown files (default: vault/synapses)",
+    )
+    query_parser.add_argument(
+        "--chroma-dir",
+        default="vault/chroma",
+        help="ChromaDB persistence directory (default: vault/chroma)",
+    )
+    query_parser.set_defaults(func=cmd_query)
 
     args = parser.parse_args()
     args.func(args)
