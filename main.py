@@ -87,6 +87,9 @@ def cmd_index(args: argparse.Namespace) -> None:
     )
 
 
+_logger = logging.getLogger(__name__)
+
+
 def _build_uuid_to_path_map(synapse_dir: Path) -> dict[str, str]:
     """Build uuid (short form) -> file path mapping. O(n) scan once."""
     mapping: dict[str, str] = {}
@@ -100,8 +103,8 @@ def _build_uuid_to_path_map(synapse_dir: Path) -> dict[str, str]:
                 continue
             short = str(uuid_val).replace("urn:uuid:", "")
             mapping[short] = str(path)
-        except Exception:
-            continue
+        except Exception as e:
+            _logger.debug("Failed to parse %s: %s", path, e)
     return mapping
 
 

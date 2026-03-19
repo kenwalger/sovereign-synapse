@@ -41,7 +41,7 @@ def _chunk_text(text: str) -> list[str]:
         return [text]
     chunks: list[str] = []
     start = 0
-    step = CHUNK_SIZE - CHUNK_OVERLAP
+    step = max(1, CHUNK_SIZE - CHUNK_OVERLAP)
     while start < len(text):
         chunk = text[start : start + CHUNK_SIZE]
         if chunk.strip():
@@ -146,8 +146,6 @@ class VectorStore:
             text = text[:CHUNK_SIZE]
             if is_query:
                 _logger.warning("Query string truncated to %d chars for embedding", CHUNK_SIZE)
-            else:
-                _logger.info("Truncating text to %d chars for embedding", CHUNK_SIZE)
         response = ollama.embed(model=self._embedding_model, input=text)
         embeddings = response.embeddings if response.embeddings else []
         if not embeddings:
@@ -184,11 +182,6 @@ class VectorStore:
             _logger.warning("Empty body for %s; skipping", file_path)
             return ("FAILED", doc_id)
 
-        # Robust dedup: check final expected chunk (doc_id for single, uuid#chunk-{N-1} for multi)
-        final_chunk_id = doc_id if len(chunks) == 1 else f"{doc_id}#chunk-{len(chunks) - 1}"
-        existing = self._collection.get(ids=[final_chunk_id])
-        if existing and existing.get("ids") and len(existing["ids"]) > 0:
-            return ("SKIPPED", doc_id)
         if len(chunks) > 1:
             filename = Path(file_path).name
             _logger.info(
@@ -255,7 +248,14 @@ class VectorStore:
                 raise
             return ("FAILED", doc_id)
 
-        # All embeddings succeeded; atomic upsert (single call per file)
+        # All embeddings succeeded; delete-before-add for atomic re-indexing
+        uuid_val = metadata.get("uuid") or f"urn:uuid:{doc_id}"
+        try:
+            self._collection.delete(where={"uuid": {"$eq": uuid_val}})
+        except Exception:
+            pass  # No existing entries or metadata format differs; proceed with add
+
+        # Atomic upsert (single call per file)
         if len(chunks) == 1:
             self._collection.upsert(
                 ids=[doc_id],

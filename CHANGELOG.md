@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.21.0] - 2026-03-18 (5/5 Data Integrity)
+
+### Fixed
+- **core/vector_store.py**: Atomic re-indexing — delete-before-add; remove last-chunk dedup; always embed first, delete existing by uuid, then upsert. Re-index returns SUCCESS.
+- **core/vector_store.py**: _chunk_text loop invariant — step = max(1, CHUNK_SIZE - CHUNK_OVERLAP) prevents infinite loop on malformed config.
+- **core/vector_store.py**: Prune unreachable truncation log in _embed (else branch for is_query=False).
+- **main.py**: _build_uuid_to_path_map — replace silent except with _logger.debug for diagnostic trail.
+
+### Verified
+- ChromaDB settings=Settings(anonymized_telemetry=False) passed to PersistentClient.
+- requirements.txt: no unused packages.
+
+### Changed
+- **tests/test_vector_store.py**: test_add_synapse_returns_skipped_when_doc_already_exists → test_add_synapse_reindex_returns_success (asserts delete-before-add).
+
 ## [0.20.0] - 2026-03-18 (5/5 Merge Ready)
 
 ### Fixed
