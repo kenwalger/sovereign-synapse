@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from datetime import datetime, timezone
-
-import frontmatter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import frontmatter
 import pytest
 
 from adapters.openai_adapter import OpenAIAdapter
@@ -458,6 +458,7 @@ def test_write_turn_identical_content_preserves_mtime(tmp_path: Path) -> None:
 
     Idempotent I/O: when existing file content matches new content, skip write
     to avoid unnecessary disk I/O and preserve the modification timestamp.
+    Uses os.utime() to set mtime in the past for reliable assertion.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -479,9 +480,10 @@ def test_write_turn_identical_content_preserves_mtime(tmp_path: Path) -> None:
     md_files = list(tmp_path.glob("*.md"))
     assert len(md_files) == 1
     path = md_files[0]
+    mtime_past = time.time() - 3600  # 1 hour ago
+    os.utime(path, (mtime_past, mtime_past))
     mtime_before = path.stat().st_mtime
 
-    time.sleep(0.01)  # Ensure clock tick so mtime would change if we wrote
     adapter.write_turn(
         user_text=user_text,
         assistant_text=assistant_text,

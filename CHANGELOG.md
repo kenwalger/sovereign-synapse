@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.8.0] - 2026-03-18 (Golden Build)
+
+### Fixed
+- **main.py**: Status-checking logic moved outside try/except — unknown status now raises ValueError and fails loudly instead of being caught as "failed embedding".
+- **adapters/openai_adapter.py**: Comment on .strip() — clarify that file is left untouched (skip overwrite) if the only difference is trailing whitespace.
+
+### Changed
+- **tests/test_vector_store.py**: mtime test uses os.utime() to set mtime 1 hour in past instead of time.sleep(); reliable across filesystems.
+- **tests/test_vector_store.py**: Import grouping — stdlib, then third-party, then local.
+
 ## [0.7.0] - 2026-03-18 (Golden Build)
 
 ### Changed
