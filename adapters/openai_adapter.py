@@ -47,7 +47,7 @@ class OpenAIAdapter(BaseAdapter):
         """
         return slugify(text[:length])
 
-    def _content_hash(self, text: str, length: int = 6) -> str:
+    def _content_hash(self, text: str, length: int = 10) -> str:
         """Generate a short hash of the text for filename uniqueness.
 
         Args:
@@ -108,7 +108,7 @@ class OpenAIAdapter(BaseAdapter):
                             if convo_id is None:
                                 convo_id = convo.get("title")
                             if convo_id is None or convo_id == "":
-                                convo_id = f"hash_{hashlib.sha256(str(mapping)[:500].encode()).hexdigest()[:12]}"
+                                convo_id = f"hash_{hashlib.sha256(json.dumps(mapping, sort_keys=True).encode()).hexdigest()[:12]}"
                             original_convo_id = str(convo_id)
                             model = child_msg.get("metadata", {}).get("model_slug", "gpt-unknown")
                             turn_data = (
@@ -180,6 +180,17 @@ class OpenAIAdapter(BaseAdapter):
         body = f"### User\n{user_text}\n\n### Assistant\n{assistant_text}"
         post = frontmatter.Post(content=body, **metadata)
         content = frontmatter.dumps(post)
-        
-        with open(os.path.join(self.output_path, filename), "w", encoding="utf-8") as f:
+
+        filepath = os.path.join(self.output_path, filename)
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                existing = f.read()
+            if existing.strip() != (content + "\n").strip():
+                _logger.warning(
+                    "Skipping overwrite of %s: file exists with different content (manual edits protected)",
+                    filename,
+                )
+                return
+
+        with open(filepath, "w", encoding="utf-8") as f:
             f.write(content + "\n")

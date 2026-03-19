@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.5.0] - 2026-03-18
+
+### Added
+- **adapters/openai_adapter.py**: Protect manual edits — before overwriting, check if file exists with different content; if so, log WARNING and skip to avoid losing human annotations during re-ingest.
+- **main.py**: Index command summary — "Indexed X new synapses, skipped Y existing" at completion.
+- **core/vector_store.py**: `add_synapse` returns `(doc_id, is_new)` to distinguish new vs. existing documents.
+- **tests/test_vector_store.py**: `test_write_turn_existing_file_different_content_not_overwritten` — verifies no overwrite when content differs and WARNING is logged.
+
+### Changed
+- **adapters/openai_adapter.py**: Filename hash length increased from 6 to 10 characters for stronger collision resistance.
+- **adapters/openai_adapter.py**: Deterministic convo fallback — `json.dumps(mapping, sort_keys=True)` instead of `str(mapping)` for stable IDs when `convo.id` is missing.
+
 ## [0.4.0] - 2026-03-18
 
 ### Fixed

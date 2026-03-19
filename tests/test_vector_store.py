@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 
@@ -77,7 +78,7 @@ def test_add_synapse_parses_file_and_calls_embedding(
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        doc_id = store.add_synapse(str(synapse_path))
+        doc_id, _ = store.add_synapse(str(synapse_path))
 
     assert doc_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
@@ -113,8 +114,8 @@ Test
 ### Assistant
 Test response.
 """
-    synapse_path = tmp_path / "malformed_synapse.md"
-    synapse_path.write_text(malformed_content, encoding="utf-8")
+    malformed_synapse_path = tmp_path / "malformed_synapse.md"
+    malformed_synapse_path.write_text(malformed_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
@@ -123,7 +124,7 @@ Test response.
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        doc_id = store.add_synapse(str(synapse_path))
+        doc_id, _ = store.add_synapse(str(malformed_synapse_path))
 
     assert doc_id == "12345"
 
@@ -215,7 +216,7 @@ And more text after it.
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        doc_id = store.add_synapse(str(synapse_path))
+        doc_id, _ = store.add_synapse(str(synapse_path))
 
     assert doc_id == "b2c3d4e5-f6a7-8901-bcde-f23456789012"
     # Verify the body passed to embed includes content after the ---
@@ -342,7 +343,7 @@ def test_parse_handles_none_convo_id(tmp_path: Path) -> None:
 def test_write_turn_same_minute_different_text_produces_distinct_files(tmp_path: Path) -> None:
     """Verify two turns in the same minute with different text do not overwrite.
 
-    The 6-char content hash ensures distinct filenames.
+    The content hash ensures distinct filenames.
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -398,6 +399,54 @@ def test_write_turn_title_with_special_chars_produces_valid_yaml(tmp_path: Path)
 
     post = frontmatter.loads(content)
     assert str(post.get("original_convo_id", "")) == "Bug #123 {urgent}: fix needed"
+
+
+def test_write_turn_existing_file_different_content_not_overwritten(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Verify write_turn skips overwrite when file exists with different content.
+
+    Protects manual human annotations during re-ingest: if the target file
+    exists and has different content, log WARNING and do not overwrite.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        caplog: Pytest log capture fixture.
+    """
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    user_text = "What is the answer?"
+    assistant_text = "The answer is 42."
+    timestamp = datetime(2025, 7, 1, 14, 30, 0, tzinfo=timezone.utc)
+    convo_id = "test-convo-manual"
+
+    adapter.write_turn(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        timestamp=timestamp,
+        model="gpt-4o",
+        original_convo_id=convo_id,
+    )
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) == 1
+    path = md_files[0]
+    original_content = path.read_text(encoding="utf-8")
+    path.write_text(original_content + "\n\n<!-- MANUAL ANNOTATION -->\n", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING):
+        adapter.write_turn(
+            user_text=user_text,
+            assistant_text=assistant_text,
+            timestamp=timestamp,
+            model="gpt-4o",
+            original_convo_id=convo_id,
+        )
+
+    final_content = path.read_text(encoding="utf-8")
+    assert "MANUAL ANNOTATION" in final_content
+    assert any("Skipping overwrite" in rec.message for rec in caplog.records)
+    assert any(rec.levelname == "WARNING" for rec in caplog.records)
 
 
 def test_vector_store_query_empty_collection_returns_empty_list(

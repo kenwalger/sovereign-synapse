@@ -50,16 +50,20 @@ def cmd_index(args: argparse.Namespace) -> None:
         print(f"❌ Failed to initialize vector store: {e}")
         raise SystemExit(1)
 
-    count = 0
+    indexed = 0
+    skipped = 0
     for path in sorted(synapse_dir.glob("*.md")):
         try:
-            doc_id = store.add_synapse(str(path))
+            doc_id, is_new = store.add_synapse(str(path))
             if doc_id:
-                count += 1
+                if is_new:
+                    indexed += 1
+                else:
+                    skipped += 1
         except Exception as e:
             print(f"⚠️ Skipped {path.name}: {e}")
 
-    print(f"✅ Index complete. {count} synapses indexed in {chroma_dir}.")
+    print(f"✅ Index complete. Indexed {indexed} new synapses, skipped {skipped} existing.")
 
 
 def main() -> None:

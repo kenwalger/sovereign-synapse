@@ -111,7 +111,7 @@ class VectorStore:
             return []
         return list(embeddings[0])
 
-    def add_synapse(self, file_path: str) -> str:
+    def add_synapse(self, file_path: str) -> tuple[str, bool]:
         """Read a synapse Markdown file, extract metadata, and add to the store.
 
         Parses the file for YAML frontmatter and body, generates an embedding
@@ -121,8 +121,9 @@ class VectorStore:
             file_path: Path to the synapse Markdown file.
 
         Returns:
-            The ChromaDB document ID (derived from uuid), or empty string if
-            embeddings were empty and the document was not upserted.
+            A tuple (doc_id, is_new). doc_id is the ChromaDB document ID, or
+            empty string if embeddings were empty. is_new is True when the
+            document was added, False when it already existed (skipped).
 
         Raises:
             FileNotFoundError: If the file does not exist.
@@ -134,13 +135,17 @@ class VectorStore:
         if not doc_id:
             raise ValueError(f"No uuid in frontmatter for {file_path}")
 
+        existing = self._collection.get(ids=[doc_id])
+        if existing and existing.get("ids") and len(existing["ids"]) > 0:
+            return (doc_id, False)
+
         embedding = self._embed(body)
         if not embedding:
             _logger.warning(
                 "Empty embeddings for %s; skipping upsert",
                 file_path,
             )
-            return ""
+            return ("", False)
 
         # ChromaDB metadata values must be str, int, float, or bool
         safe_metadata: dict[str, str | int | float | bool] = {}
@@ -159,7 +164,7 @@ class VectorStore:
             metadatas=[safe_metadata],
         )
 
-        return doc_id
+        return (doc_id, True)
 
     def query(self, text: str, n_results: int = 5) -> list[dict[str, Any]]:
         """Return the top matching synapses for the given query text.
