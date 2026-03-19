@@ -82,3 +82,42 @@ def test_add_synapse_parses_file_and_calls_embedding(
     input_text = call_args.kwargs["input"]
     assert "What wearable provides raw sensor data?" in input_text
     assert "Movesense Sensor" in input_text
+
+
+def test_add_synapse_malformed_frontmatter_uuid_type_guard(
+    tmp_path: Path,
+    temp_persist_dir: str,
+) -> None:
+    """Verify _extract_uuid type guard handles non-string uuid without AttributeError.
+
+    When YAML parses uuid as int or float (e.g., uuid: 12345), the type guard
+    coerces to str before calling .startswith(), preventing AttributeError.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        temp_persist_dir: Temporary ChromaDB persistence path.
+    """
+    malformed_content = """---
+uuid: 12345
+source: gpt_export
+model: gpt-4o
+---
+### User
+Test
+
+### Assistant
+Test response.
+"""
+    synapse_path = tmp_path / "malformed_synapse.md"
+    synapse_path.write_text(malformed_content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+
+        store = VectorStore(persist_directory=temp_persist_dir)
+        doc_id = store.add_synapse(str(synapse_path))
+
+    assert doc_id == "12345"

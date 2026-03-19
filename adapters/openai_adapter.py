@@ -111,7 +111,7 @@ class OpenAIAdapter:
         frontmatter = [
             "---",
             f"uuid: urn:uuid:{unique_id}",
-            f"source: gpt_export",
+            "source: gpt_export",
             f"model: {model}",
             f"original_timestamp: {timestamp.isoformat()}",
             f"original_convo_id: {original_convo_id}",
@@ -122,5 +122,5 @@ class OpenAIAdapter:
         
         content = "\n".join(frontmatter) + f"\n\n### User\n{user_text}\n\n### Assistant\n{assistant_text}"
         
-        with open(os.path.join(self.output_path, filename), 'w', encoding='utf-8') as f:
+        with open(os.path.join(self.output_path, filename), "w", encoding="utf-8") as f:
             f.write(content)

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.2] - 2026-03-18
+
+### Fixed
+- **core/vector_store.py**: Type guard in `_extract_uuid` for non-string uuid (e.g., YAML-parsed int); prevents AttributeError on `.startswith()`.
+- **core/vector_store.py**: Empty embedding guard already in place; skips upsert when Ollama returns empty list or None.
+- **adapters/openai_adapter.py**: Remove unnecessary f-string from static `"source: gpt_export"` line.
+- **Project hygiene**: Trailing newlines on requirements.txt, README.md, and all `.py` files.
+- **requirements.txt**: Version pinning for reproducibility — chromadb==0.5.3, ollama==0.2.1, beautifulsoup4==4.12.3, python-slugify==8.0.4.
+
+### Added
+- **tests/test_vector_store.py**: `test_add_synapse_malformed_frontmatter_uuid_type_guard` — verifies type guard handles non-string uuid without crash.
+
 ## [0.3.1] - 2026-03-18
 
 ### Fixed

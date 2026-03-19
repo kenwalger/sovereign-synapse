@@ -53,14 +53,20 @@ def _parse_synapse_markdown(file_path: str) -> tuple[dict[str, Any], str]:
 
 
 def _extract_uuid(metadata: dict[str, Any]) -> str:
-    """Derive a stable string ID from metadata for ChromaDB."""
+    """Derive a stable string ID from metadata for ChromaDB.
+
+    Handles non-string uuid values (e.g., parsed as int from YAML) by
+    coercing to string before calling str methods.
+    """
     uuid_val = metadata.get("uuid")
-    if uuid_val:
-        # Normalize URN form to a short ID
-        if uuid_val.startswith("urn:uuid:"):
-            return uuid_val.replace("urn:uuid:", "")
+    if not uuid_val:
+        return ""
+    if not isinstance(uuid_val, str):
         return str(uuid_val)
-    return ""
+    # Normalize URN form to a short ID
+    if uuid_val.startswith("urn:uuid:"):
+        return uuid_val.replace("urn:uuid:", "")
+    return uuid_val
 
 
 class VectorStore:
