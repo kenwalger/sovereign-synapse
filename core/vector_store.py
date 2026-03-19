@@ -59,7 +59,7 @@ def _extract_uuid(metadata: dict[str, Any]) -> str:
     coercing to string before calling str methods.
     """
     uuid_val = metadata.get("uuid")
-    if not uuid_val:
+    if uuid_val is None:
         return ""
     if not isinstance(uuid_val, str):
         return str(uuid_val)

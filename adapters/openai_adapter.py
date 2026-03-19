@@ -102,8 +102,8 @@ class OpenAIAdapter:
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)
         
-        # Create a unique but repeatable ID based on the conversation and the specific question
-        seed = f"{original_convo_id}-{user_text}"
+        # Create a unique but repeatable ID based on conversation, timestamp, and question
+        seed = f"{original_convo_id}-{timestamp.isoformat()}-{user_text}"
         unique_id = uuid.uuid5(uuid.NAMESPACE_DNS, seed)
 
         os.makedirs(self.output_path, exist_ok=True)

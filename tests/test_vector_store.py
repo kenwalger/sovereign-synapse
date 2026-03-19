@@ -1,13 +1,16 @@
-"""Tests for core.vector_store.VectorStore."""
+"""Tests for core.vector_store.VectorStore and related adapter behavior."""
 
 from __future__ import annotations
 
+import re
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
 
+from adapters.openai_adapter import OpenAIAdapter
 from core.vector_store import VectorStore
 
 
@@ -121,3 +124,52 @@ Test response.
         doc_id = store.add_synapse(str(synapse_path))
 
     assert doc_id == "12345"
+
+
+def test_write_turn_generates_unique_uuids_for_same_message_different_timestamps(
+    tmp_path: Path,
+) -> None:
+    """Verify identical user messages with different timestamps get unique UUIDs.
+
+    Two write_turn calls with the same user_text but different timestamps must
+    produce synapse files with different uuid values in frontmatter.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    user_text = "What is the capital of France?"
+    assistant_text = "The capital of France is Paris."
+    convo_id = "test-convo-123"
+    model = "gpt-4o"
+
+    timestamp1 = datetime(2025, 6, 1, 10, 0, 0)
+    timestamp2 = datetime(2025, 6, 1, 10, 5, 0)
+
+    adapter.write_turn(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        timestamp=timestamp1,
+        model=model,
+        original_convo_id=convo_id,
+    )
+    adapter.write_turn(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        timestamp=timestamp2,
+        model=model,
+        original_convo_id=convo_id,
+    )
+
+    md_files = sorted(tmp_path.glob("*.md"))
+    assert len(md_files) == 2
+
+    uuid_pattern = re.compile(r"uuid: urn:uuid:([a-f0-9-]{36})")
+    uuids = []
+    for path in md_files:
+        content = path.read_text(encoding="utf-8")
+        match = uuid_pattern.search(content)
+        assert match, f"No uuid found in {path}"
+        uuids.append(match.group(1))
+
+    assert uuids[0] != uuids[1], "Identical messages with different timestamps must have distinct UUIDs"

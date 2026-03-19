@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.3] - 2026-03-18
+
+### Fixed
+- **P1 data integrity**: UUID collision in `adapters/openai_adapter.py` — seed now includes timestamp: `{convo_id}-{timestamp.isoformat()}-{user_text}` so repeated messages in the same thread get unique, deterministic IDs.
+- **core/vector_store.py**: UUID guard changed from `if not uuid_val` to `if uuid_val is None` to avoid falsy integer bugs (e.g., `uuid: 0`).
+
+### Removed
+- **beautifulsoup4**: Not used for Markdown parsing; removed from requirements.
+
+### Changed
+- **requirements.txt**: Pin all dependencies; removed beautifulsoup4; added pydantic==2.11.0, jinja2==3.1.5, pytest==8.3.4, pyyaml==6.0.2.
+
+### Added
+- **tests/test_vector_store.py**: `test_write_turn_generates_unique_uuids_for_same_message_different_timestamps` — verifies adapter produces distinct UUIDs for identical user messages with different timestamps.
+
 ## [0.3.2] - 2026-03-18
 
 ### Fixed
