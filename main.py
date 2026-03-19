@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+from datetime import datetime
 from pathlib import Path
 
 import frontmatter
@@ -22,24 +23,35 @@ SNIPPET_MAX_LEN = 200
 
 
 def _clean_snippet(doc: str, max_len: int = SNIPPET_MAX_LEN) -> str:
-    """Skip YAML frontmatter (---), created_at/updated_at/uuid; past ```, find first human text."""
+    """Return first 3 non-empty lines that aren't headers or metadata; chunks have body only."""
     lines = doc.split("\n")
     out: list[str] = []
-    delim_count = 0
     for line in lines:
+        if len(out) >= 3:
+            break
         s = line.strip()
-        if s == "---":
-            delim_count += 1
+        if not s:
             continue
-        if delim_count == 1 or s.startswith("uuid:") or s.startswith("created_at:") or s.startswith("updated_at:"):
+        if s.startswith("#"):
+            continue
+        if s.startswith("uuid:") or s.startswith("created_at:") or s.startswith("updated_at:"):
             continue
         if s.startswith("```"):
             continue
-        if s:
-            out.append(line)
-            break
+        out.append(line)
     result = "\n".join(out) if out else doc
     return result[:max_len] + ("..." if len(result) > max_len else "")
+
+
+def _format_timestamp(ts: str) -> str:
+    """Format timestamp for display (YYYY-MM-DD HH:MM)."""
+    if not ts or ts == "—":
+        return ts
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return ts
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
@@ -151,10 +163,32 @@ def cmd_query(args: argparse.Namespace) -> None:
 
     uuid_to_path = _build_uuid_to_path_map(synapse_dir)
 
+    # Deduplicate by file path (keep first = best match per file)
+    seen_paths: set[str] = set()
+    deduped: list[dict] = []
+    for hit in results:
+        doc_id = hit["id"]
+        base_uuid = doc_id.split("#")[0]
+        file_path = uuid_to_path.get(base_uuid)
+        path_key = file_path or base_uuid
+        if path_key in seen_paths:
+            continue
+        seen_paths.add(path_key)
+        deduped.append(hit)
+    results = deduped
+
     print(f"🔍 Top {len(results)} matches for: {query_string}\n")
     for i, hit in enumerate(results, 1):
         meta = hit.get("metadata") or {}
-        timestamp = meta.get("original_timestamp", "—")
+        raw_ts = meta.get("original_timestamp", "—")
+        if raw_ts is None or raw_ts == "—":
+            timestamp = "—"
+        elif isinstance(raw_ts, datetime):
+            timestamp = raw_ts.strftime("%Y-%m-%d %H:%M")
+        elif isinstance(raw_ts, str):
+            timestamp = _format_timestamp(raw_ts)
+        else:
+            timestamp = str(raw_ts)
         doc = hit.get("document") or ""
         snippet = _clean_snippet(doc)
         doc_id = hit["id"]

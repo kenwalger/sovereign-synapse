@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.29.0] - 2026-03-18 (5/5 100% Confidence)
+
+### Fixed
+- **main.py**: Informative snippets — _clean_snippet drops --- logic (chunks have body only); returns first 3 non-empty lines, skips headers (#) and metadata (uuid:, created_at:, updated_at:); shows actual content like "Manufactured in 1889..." instead of ### User.
+- **core/vector_store.py**: Logic consistency — uuid_val uses explicit `if uuid_val is None` fallback instead of `or`, avoiding falsy-check bug.
+
+### Changed
+- **main.py**: Deduplicate by file path — show 5 unique files per query (keep best match per file); format timestamp as YYYY-MM-DD HH:MM.
+
+### Verified
+- Empty body (whitespace only) returns SKIPPED immediately.
+
+### Changed
+- **tests/test_cli.py**: test_query_cli_prints_results_to_stdout — assert snippet has multiple lines of content and skips metadata/headers.
+
 ## [0.28.0] - 2026-03-18 (5/5 Final Logic Gates)
 
 ### Fixed

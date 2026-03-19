@@ -214,3 +214,8 @@ The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
     assert "File" in captured.out
     assert "long-wearable.md" in captured.out
     assert "(Path not found)" not in captured.out
+    # Snippet quality: multiple lines of content, skips headers/metadata
+    assert "Movesense" in captured.out or "raw sensor" in captured.out
+    snippet_section = captured.out.split("Snippet:")[1].split("File:")[0] if "Snippet:" in captured.out else ""
+    assert "\n" in snippet_section or "Movesense" in snippet_section, "Snippet should show multi-line content, not just ### User"
+    assert "uuid:" not in snippet_section and "### User" not in snippet_section, "Snippet should skip metadata and headers"

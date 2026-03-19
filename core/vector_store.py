@@ -188,7 +188,9 @@ class VectorStore:
 
         content_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
         chunks = _chunk_text(body)
-        uuid_val = metadata.get("uuid") or f"urn:uuid:{doc_id}"
+        uuid_val = metadata.get("uuid")
+        if uuid_val is None:
+            uuid_val = f"urn:uuid:{doc_id}"
         try:
             existing = self._collection.get(
                 where={"uuid": {"$eq": uuid_val}},
