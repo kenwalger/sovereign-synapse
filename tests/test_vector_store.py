@@ -78,8 +78,9 @@ def test_add_synapse_parses_file_and_calls_embedding(
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        doc_id, _ = store.add_synapse(str(synapse_path))
+        status, doc_id = store.add_synapse(str(synapse_path))
 
+    assert status == "SUCCESS"
     assert doc_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
     mock_embed.assert_called_once()
@@ -124,8 +125,9 @@ Test response.
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        doc_id, _ = store.add_synapse(str(malformed_synapse_path))
+        status, doc_id = store.add_synapse(str(malformed_synapse_path))
 
+    assert status == "SUCCESS"
     assert doc_id == "12345"
 
 
@@ -216,8 +218,9 @@ And more text after it.
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        doc_id, _ = store.add_synapse(str(synapse_path))
+        status, doc_id = store.add_synapse(str(synapse_path))
 
+    assert status == "SUCCESS"
     assert doc_id == "b2c3d4e5-f6a7-8901-bcde-f23456789012"
     # Verify the body passed to embed includes content after the ---
     call_input = mock_embed.call_args.kwargs["input"]
@@ -449,6 +452,47 @@ def test_write_turn_existing_file_different_content_not_overwritten(
     assert any(rec.levelname == "WARNING" for rec in caplog.records)
 
 
+def test_add_synapse_returns_skipped_when_doc_already_exists(
+    tmp_path: Path,
+    temp_persist_dir: str,
+    sample_synapse_content: str,
+) -> None:
+    """Verify add_synapse returns SKIPPED when document already in collection."""
+    synapse_path = tmp_path / "synapse.md"
+    synapse_path.write_text(sample_synapse_content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status1, doc_id1 = store.add_synapse(str(synapse_path))
+        status2, doc_id2 = store.add_synapse(str(synapse_path))
+
+    assert status1 == "SUCCESS"
+    assert status2 == "SKIPPED"
+    assert doc_id1 == doc_id2 == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
+def test_add_synapse_returns_failed_when_embedding_empty(
+    tmp_path: Path,
+    temp_persist_dir: str,
+    sample_synapse_content: str,
+) -> None:
+    """Verify add_synapse returns FAILED when Ollama returns no embeddings."""
+    synapse_path = tmp_path / "synapse.md"
+    synapse_path.write_text(sample_synapse_content, encoding="utf-8")
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = SimpleNamespace(embeddings=[])
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status, doc_id = store.add_synapse(str(synapse_path))
+
+    assert status == "FAILED"
+    assert doc_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+
 def test_vector_store_query_empty_collection_returns_empty_list(
     temp_persist_dir: str,
 ) -> None:
@@ -492,7 +536,8 @@ def test_vector_store_query_returns_top_matches(
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
-        store.add_synapse(str(synapse_path))
+        status, _ = store.add_synapse(str(synapse_path))
+        assert status == "SUCCESS"
         results = store.query("wearable sensor data", n_results=5)
 
     assert len(results) == 1

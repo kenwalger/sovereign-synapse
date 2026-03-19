@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
+
+from main import cmd_index
 
 
 def _run_cli(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -113,3 +118,42 @@ def test_index_subcommand_zero_state(tmp_path: Path) -> None:
 
     assert result.returncode == 0
     assert "index" in result.stdout.lower() or "Index" in result.stdout
+
+
+def test_index_embedding_failure_increments_failed(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify index correctly increments failed counter when embedding returns empty.
+
+    Mocks ollama.embed to return no embeddings; cmd_index should print a WARNING
+    for the file and report failed=1 in the summary.
+    """
+    synapse_dir = tmp_path / "synapses"
+    synapse_dir.mkdir()
+    synapse_file = synapse_dir / "test.md"
+    synapse_file.write_text(
+        """---
+uuid: urn:uuid:f1e2d3c4-b5a6-7890-1234-567890abcdef
+source: gpt_export
+model: gpt-4o
+---
+### User
+Test
+
+### Assistant
+Test response.
+""",
+        encoding="utf-8",
+    )
+
+    chroma_dir = str(tmp_path / "chroma")
+    args = argparse.Namespace(synapses_dir=str(synapse_dir), chroma_dir=chroma_dir)
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = SimpleNamespace(embeddings=[])
+        cmd_index(args)
+
+    captured = capsys.readouterr()
+    assert "Embedding failed" in captured.out
+    assert "failed 1" in captured.out

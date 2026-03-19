@@ -52,18 +52,24 @@ def cmd_index(args: argparse.Namespace) -> None:
 
     indexed = 0
     skipped = 0
+    failed = 0
     for path in sorted(synapse_dir.glob("*.md")):
         try:
-            doc_id, is_new = store.add_synapse(str(path))
-            if doc_id:
-                if is_new:
-                    indexed += 1
-                else:
-                    skipped += 1
+            status, doc_id = store.add_synapse(str(path))
+            if status == "SUCCESS":
+                indexed += 1
+            elif status == "SKIPPED":
+                skipped += 1
+            else:
+                failed += 1
+                print(f"⚠️ Embedding failed for {path.name} (uuid={doc_id or '?'}); skipped.")
         except Exception as e:
+            failed += 1
             print(f"⚠️ Skipped {path.name}: {e}")
 
-    print(f"✅ Index complete. Indexed {indexed} new synapses, skipped {skipped} existing.")
+    print(
+        f"✅ Index complete. Indexed {indexed} new synapses, skipped {skipped} existing, failed {failed}."
+    )
 
 
 def main() -> None:

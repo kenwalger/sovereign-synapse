@@ -185,6 +185,8 @@ class OpenAIAdapter(BaseAdapter):
         if os.path.exists(filepath):
             with open(filepath, "r", encoding="utf-8") as f:
                 existing = f.read()
+            # Note: .strip() protects meaningful content changes but will treat
+            # whitespace-only edits (e.g. blank lines) as unchanged and allow overwrite.
             if existing.strip() != (content + "\n").strip():
                 _logger.warning(
                     "Skipping overwrite of %s: file exists with different content (manual edits protected)",

@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.6.0] - 2026-03-18
+
+### Changed
+- **core/vector_store.py**: `add_synapse` returns `(status, doc_id)` — status is "SUCCESS", "SKIPPED", or "FAILED" for clearer semantics (no overloaded is_new).
+- **main.py**: Index loop tracks indexed, skipped, failed; prints WARNING with filename when embedding fails; summary includes "failed Z".
+
+### Added
+- **adapters/openai_adapter.py**: Comment on `.strip()` behavior — protects meaningful content but ignores whitespace-only edits.
+- **tests/test_vector_store.py**: `test_add_synapse_returns_skipped_when_doc_already_exists`, `test_add_synapse_returns_failed_when_embedding_empty`.
+- **tests/test_cli.py**: `test_index_embedding_failure_increments_failed` — mocks empty embedding, verifies failed counter and WARNING output.
+
 ## [0.5.0] - 2026-03-18
 
 ### Added

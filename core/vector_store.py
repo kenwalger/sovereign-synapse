@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import chromadb
 import frontmatter
@@ -49,6 +49,9 @@ def _parse_synapse_markdown(file_path: str) -> tuple[dict[str, Any], str]:
     body = post.content.strip() if post.content else ""
 
     return metadata, body
+
+
+AddResultStatus = Literal["SUCCESS", "SKIPPED", "FAILED"]
 
 
 def _extract_uuid(metadata: dict[str, Any]) -> str:
@@ -111,7 +114,7 @@ class VectorStore:
             return []
         return list(embeddings[0])
 
-    def add_synapse(self, file_path: str) -> tuple[str, bool]:
+    def add_synapse(self, file_path: str) -> tuple[AddResultStatus, str | None]:
         """Read a synapse Markdown file, extract metadata, and add to the store.
 
         Parses the file for YAML frontmatter and body, generates an embedding
@@ -121,9 +124,9 @@ class VectorStore:
             file_path: Path to the synapse Markdown file.
 
         Returns:
-            A tuple (doc_id, is_new). doc_id is the ChromaDB document ID, or
-            empty string if embeddings were empty. is_new is True when the
-            document was added, False when it already existed (skipped).
+            A tuple (status, doc_id). status is "SUCCESS" (added), "SKIPPED"
+            (duplicate), or "FAILED" (embedding error). doc_id is the document
+            ID when available, or None for parsing failures before uuid extraction.
 
         Raises:
             FileNotFoundError: If the file does not exist.
@@ -137,7 +140,7 @@ class VectorStore:
 
         existing = self._collection.get(ids=[doc_id])
         if existing and existing.get("ids") and len(existing["ids"]) > 0:
-            return (doc_id, False)
+            return ("SKIPPED", doc_id)
 
         embedding = self._embed(body)
         if not embedding:
@@ -145,7 +148,7 @@ class VectorStore:
                 "Empty embeddings for %s; skipping upsert",
                 file_path,
             )
-            return ("", False)
+            return ("FAILED", doc_id)
 
         # ChromaDB metadata values must be str, int, float, or bool
         safe_metadata: dict[str, str | int | float | bool] = {}
@@ -164,7 +167,7 @@ class VectorStore:
             metadatas=[safe_metadata],
         )
 
-        return (doc_id, True)
+        return ("SUCCESS", doc_id)
 
     def query(self, text: str, n_results: int = 5) -> list[dict[str, Any]]:
         """Return the top matching synapses for the given query text.
