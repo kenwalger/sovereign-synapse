@@ -66,8 +66,20 @@ def cmd_ingest(args: argparse.Namespace) -> None:
 
     adapter = OpenAIAdapter(output_path=output_path)
     try:
-        adapter.parse(input_file)
-        print(f"✅ Ingestion complete. Check {output_path} for your new history.")
+        stats = adapter.parse(input_file)
+        if stats:
+            written = stats.get("written", 0)
+            skipped = stats.get("skipped", 0)
+            protected = stats.get("protected", 0)
+            parts = [f"written {written}"]
+            if skipped:
+                parts.append(f"skipped {skipped} (unchanged)")
+            if protected:
+                parts.append(f"protected {protected} (manual edits)")
+            summary = ", ".join(parts) if any((written, skipped, protected)) else "no new turns"
+            print(f"✅ Ingestion complete. {summary}. Check {output_path} for your new history.")
+        else:
+            print(f"✅ Ingestion complete. Check {output_path} for your new history.")
     except Exception as e:
         print(f"❌ Critical Error during ingestion: {e}")
         raise SystemExit(1)

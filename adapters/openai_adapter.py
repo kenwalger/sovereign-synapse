@@ -9,7 +9,7 @@ import os
 import uuid
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 import frontmatter
 from slugify import slugify
@@ -88,12 +88,16 @@ class OpenAIAdapter(BaseAdapter):
         """
         return hashlib.sha256(text.encode()).hexdigest()[:length]
 
-    def parse(self, file_path: str) -> None:
+    def parse(self, file_path: str) -> dict[str, int]:
         """Parse an OpenAI conversations.json export into synapse Markdown files.
 
         Args:
             file_path: Path to the conversations.json file.
+
+        Returns:
+            Dict with keys written, skipped, protected (counts).
         """
+        stats: dict[str, int] = {"written": 0, "skipped": 0, "protected": 0}
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -155,13 +159,16 @@ class OpenAIAdapter(BaseAdapter):
                     continue
 
                 if turn_data:
-                    self.write_turn(
+                    status = self.write_turn(
                         user_text=turn_data[0],
                         assistant_text=turn_data[1],
                         timestamp=turn_data[2],
                         model=turn_data[3],
                         original_convo_id=turn_data[4],
                     )
+                    stats[status] = stats.get(status, 0) + 1
+
+        return stats
 
     def write_turn(
         self,
@@ -171,7 +178,7 @@ class OpenAIAdapter(BaseAdapter):
         model: str,
         original_convo_id: str,
         **kwargs: Any,
-    ) -> None:
+    ) -> Literal["written", "skipped", "protected"]:
         """Write a single user/assistant turn to a synapse Markdown file.
 
         Args:
@@ -180,6 +187,9 @@ class OpenAIAdapter(BaseAdapter):
             timestamp: When the turn occurred.
             model: Model identifier (e.g., gpt-4o).
             original_convo_id: Source conversation ID.
+
+        Returns:
+            "written" if file was written, "skipped" if idempotent, "protected" if manual edits.
         """
         slug = self._generate_slug(user_text)
         content_hash = self._content_hash(user_text)
@@ -219,9 +229,11 @@ class OpenAIAdapter(BaseAdapter):
                     "Skipping overwrite of %s: file exists with different content (manual edits protected)",
                     filename,
                 )
-                return
+                print(f"⚠️ Skipped {filename}: exists with manual edits.")
+                return "protected"
             # Idempotent: content identical; skip write to preserve mtime.
-            return
+            return "skipped"
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content + "\n")
+        return "written"

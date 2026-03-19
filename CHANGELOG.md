@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.30.0] - 2026-03-18 (5/5 Data Visibility & Logic)
+
+### Fixed
+- **adapters/openai_adapter.py**: Noisy manual-edit protection — when skipping overwrite due to content differs, keep _logger.warning and print "⚠️ Skipped [filename]: exists with manual edits." to stdout; write_turn returns "written"|"skipped"|"protected".
+- **core/vector_store.py**: Clean add_synapse — remove dead `if len != len: pass`; simplify skip invariant to `if count_matches and all_hashes_match: return SKIPPED`; _embed_with_retry takes file_path as explicit `fp` argument for isolated testability.
+
+### Changed
+- **main.py**: cmd_ingest tracks and prints "Protected (Manual Edits)" count in summary (written, skipped, protected).
+- **adapters/base.py**: parse() returns dict[str, int] | None with written/skipped/protected counts.
+
 ## [0.29.0] - 2026-03-18 (5/5 100% Confidence)
 
 ### Fixed

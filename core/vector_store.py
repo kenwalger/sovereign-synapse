@@ -198,11 +198,12 @@ class VectorStore:
             )
             existing_ids = existing.get("ids") or []
             metas = existing.get("metadatas") or []
-            if len(existing_ids) != len(chunks):
-                pass
-            elif len(metas) == len(chunks) and all(
-                m and m.get("content_hash") == content_hash for m in metas
-            ):
+            count_matches = len(existing_ids) == len(chunks)
+            all_hashes_match = (
+                len(metas) == len(chunks)
+                and all(m and m.get("content_hash") == content_hash for m in metas)
+            )
+            if count_matches and all_hashes_match:
                 return ("SKIPPED", doc_id)
         except Exception as e:
             _logger.warning(
@@ -230,7 +231,9 @@ class VectorStore:
                 safe_metadata[key] = str(value)
         safe_metadata["content_hash"] = content_hash
 
-        def _embed_with_retry(chunk: str, chunk_idx: int) -> list[float] | None:
+        def _embed_with_retry(
+            chunk: str, chunk_idx: int, fp: str
+        ) -> list[float] | None:
             """Embed chunk; on 400, retry with hard truncation to HARD_TRUNCATE_CHARS."""
             try:
                 return self._embed(chunk)
@@ -243,7 +246,7 @@ class VectorStore:
                 _logger.info(
                     "Chunk %d for %s caused 400; retrying with %d-char truncation",
                     chunk_idx + 1,
-                    file_path,
+                    fp,
                     HARD_TRUNCATE_CHARS,
                 )
                 try:
@@ -253,7 +256,7 @@ class VectorStore:
                         _logger.error(
                             "Chunk %d for %s still fails after truncation: %s",
                             chunk_idx + 1,
-                            file_path,
+                            fp,
                             e2,
                         )
                         return None
@@ -263,7 +266,7 @@ class VectorStore:
         embeddings_list: list[list[float]] = []
         try:
             for i, chunk in enumerate(chunks):
-                emb = _embed_with_retry(chunk, i)
+                emb = _embed_with_retry(chunk, i, file_path)
                 if not emb:
                     return ("FAILED", doc_id)
                 embeddings_list.append(emb)

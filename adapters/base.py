@@ -11,11 +11,14 @@ class BaseAdapter(ABC):
     """Abstract base class for all LLM data adapters."""
 
     @abstractmethod
-    def parse(self, file_path: str) -> None:
+    def parse(self, file_path: str) -> dict[str, int] | None:
         """Parse provider-specific export and write turn-based Markdown.
 
         Args:
             file_path: Path to the export file (JSON, CSV, etc.).
+
+        Returns:
+            Optional dict with keys written, skipped, protected (counts).
         """
         ...
 
