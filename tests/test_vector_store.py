@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 
 import frontmatter
@@ -450,6 +451,47 @@ def test_write_turn_existing_file_different_content_not_overwritten(
     assert "MANUAL ANNOTATION" in final_content
     assert any("Skipping overwrite" in rec.message for rec in caplog.records)
     assert any(rec.levelname == "WARNING" for rec in caplog.records)
+
+
+def test_write_turn_identical_content_preserves_mtime(tmp_path: Path) -> None:
+    """Verify re-ingest of identical content does not change file mtime.
+
+    Idempotent I/O: when existing file content matches new content, skip write
+    to avoid unnecessary disk I/O and preserve the modification timestamp.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    user_text = "Same content?"
+    assistant_text = "Same response."
+    timestamp = datetime(2025, 7, 15, 9, 0, 0, tzinfo=timezone.utc)
+    convo_id = "test-convo-idempotent"
+
+    adapter.write_turn(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        timestamp=timestamp,
+        model="gpt-4o",
+        original_convo_id=convo_id,
+    )
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) == 1
+    path = md_files[0]
+    mtime_before = path.stat().st_mtime
+
+    time.sleep(0.01)  # Ensure clock tick so mtime would change if we wrote
+    adapter.write_turn(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        timestamp=timestamp,
+        model="gpt-4o",
+        original_convo_id=convo_id,
+    )
+
+    mtime_after = path.stat().st_mtime
+    assert mtime_before == mtime_after
 
 
 def test_add_synapse_returns_skipped_when_doc_already_exists(

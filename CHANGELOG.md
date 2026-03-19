@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.7.0] - 2026-03-18 (Golden Build)
+
+### Changed
+- **adapters/openai_adapter.py**: Idempotent I/O — when file exists with identical content, return immediately without write; preserves mtime and avoids unnecessary disk I/O.
+- **adapters/openai_adapter.py**: PEP 8 imports — grouped typing and datetime at top, separated from stdlib by newline.
+- **main.py**: Exhaustive status handling in cmd_index — explicit SUCCESS/SKIPPED/FAILED branches; unknown status raises ValueError.
+- **core/vector_store.py**: add_synapse docstring — add Raises for ollama.ResponseError.
+
+### Added
+- **tests/test_vector_store.py**: `test_write_turn_identical_content_preserves_mtime` — verifies mtime unchanged after re-ingest of identical content.
+
 ## [0.6.0] - 2026-03-18
 
 ### Changed

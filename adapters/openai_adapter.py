@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from typing import Any
 import json
 import logging
 import os
 import uuid
+
 from datetime import datetime, timezone
+from typing import Any
 
 import frontmatter
 from slugify import slugify
@@ -193,6 +194,8 @@ class OpenAIAdapter(BaseAdapter):
                     filename,
                 )
                 return
+            # Idempotent: content identical; skip write to preserve mtime.
+            return
 
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(content + "\n")

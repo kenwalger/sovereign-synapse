@@ -131,6 +131,7 @@ class VectorStore:
         Raises:
             FileNotFoundError: If the file does not exist.
             ValueError: If frontmatter is malformed or uuid is missing.
+            ollama.ResponseError: If Ollama is unreachable or returns an error.
         """
         metadata, body = _parse_synapse_markdown(file_path)
 

@@ -60,9 +60,11 @@ def cmd_index(args: argparse.Namespace) -> None:
                 indexed += 1
             elif status == "SKIPPED":
                 skipped += 1
-            else:
+            elif status == "FAILED":
                 failed += 1
                 print(f"⚠️ Embedding failed for {path.name} (uuid={doc_id or '?'}); skipped.")
+            else:
+                raise ValueError(f"Unknown add_synapse status: {status!r}")
         except Exception as e:
             failed += 1
             print(f"⚠️ Skipped {path.name}: {e}")
