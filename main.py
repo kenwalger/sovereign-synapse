@@ -1,4 +1,9 @@
-"""CLI entry point for Sovereign Synapse ingest and index pipeline."""
+"""CLI entry point for Sovereign Synapse ingest and index pipeline.
+
+Subcommands:
+  ingest PATH [-o OUTPUT]  Parse export JSON into Markdown turns.
+  index [--synapses-dir DIR] [--chroma-dir DIR]  Index Markdown into vector store.
+"""
 
 from __future__ import annotations
 

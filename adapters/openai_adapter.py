@@ -32,9 +32,11 @@ def _safe_join_parts(parts: list[object]) -> str:
         if isinstance(p, str):
             result.append(p)
         elif isinstance(p, dict):
-            text = p.get("text") or p.get("content")
-            if isinstance(text, str) and text.strip():
-                result.append(text.strip())
+            text = p.get("text")
+            content = p.get("content")
+            val = text if text is not None else content
+            if isinstance(val, str) and val.strip():
+                result.append(val.strip())
             else:
                 result.append(f"\n\n```json\n{json.dumps(p, indent=2)}\n```\n\n")
         else:
@@ -124,7 +126,7 @@ class OpenAIAdapter(BaseAdapter):
 
                             convo_id = convo.get("id")
                             if convo_id is None:
-                                convo_id = convo.get("title")
+                                convo_id = title
                             if convo_id is None or convo_id == "":
                                 convo_id = f"hash_{hashlib.sha256(json.dumps(mapping, sort_keys=True).encode()).hexdigest()[:12]}"
                             original_convo_id = str(convo_id)

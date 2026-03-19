@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.10.0] - 2026-03-18
+
+### Fixed
+- **adapters/openai_adapter.py**: Robust title fallback — use existing `title` variable (with "Untitled Conversation" default) for original_convo_id instead of re-calling convo.get("title"); never skip to hash when title is available.
+- **core/vector_store.py**: Zero-result safety — `if n_results <= 0: return []` at start of query() to prevent ChromaDB ValueError.
+- **adapters/openai_adapter.py**: Explicit part extraction in _safe_join_parts — `val = text if text is not None else content` to avoid falsy-but-valid string (e.g. "") falling through incorrectly.
+
+### Added
+- **main.py**: Module docstring listing ingest and index subcommands.
+
+### Verified
+- Trailing newlines on all files; ingest/index subcommands functional and documented.
+
 ## [0.9.0] - 2026-03-18 (Phase 1.3 Final)
 
 ### Added
