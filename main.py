@@ -1,27 +1,286 @@
-import sys
+"""CLI entry point for Sovereign Synapse ingest and index pipeline.
+
+Subcommands:
+  ingest PATH [-o OUTPUT]  Parse export JSON into Markdown turns.
+  index [--synapses-dir DIR] [--chroma-dir DIR]  Index Markdown into vector store.
+  query QUERY_STRING [--n-results N]  Semantic search over indexed synapses.
+"""
+
+from __future__ import annotations
+
+import argparse
+import logging
+from datetime import datetime
+from pathlib import Path
+
+import frontmatter
+
 from adapters import OpenAIAdapter
+from core.vector_store import VectorStore
 
-def main():
-    """
-    Main entry point for the Sovereign Synapse Ingestor.
-    """
-    # Simple CLI logic for Phase 1
-    if len(sys.argv) < 2:
-        print("Usage: python main.py <path_to_export_json>")
-        return
+_logger = logging.getLogger(__name__)
+SNIPPET_MAX_LEN = 200
 
-    input_file = sys.argv[1]
-    
-    print(f"🏛️ Initializing Sovereign Ingest for: {input_file}")
-    
-    # Initialize the adapter (Defaulting to OpenAI for Sprint 1)
-    adapter = OpenAIAdapter(output_path="vault/synapses")
-    
+
+def _clean_snippet(doc: str, max_len: int = SNIPPET_MAX_LEN) -> str:
+    """Return first 3 non-empty lines that aren't headers or metadata; chunks have body only."""
+    lines = doc.split("\n")
+    out: list[str] = []
+    for line in lines:
+        if len(out) >= 3:
+            break
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("#"):
+            continue
+        if s.startswith("uuid:") or s.startswith("created_at:") or s.startswith("updated_at:"):
+            continue
+        if s.startswith("```"):
+            continue
+        out.append(line)
+    result = "\n".join(out) if out else doc
+    return result[:max_len] + ("..." if len(result) > max_len else "")
+
+
+def _format_timestamp(ts: str) -> str:
+    """Format timestamp for display (YYYY-MM-DD HH:MM)."""
+    if not ts or ts == "—":
+        return ts
     try:
-        adapter.parse(input_file)
-        print("✅ Ingestion complete. Check /vault/synapses for your new history.")
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except (ValueError, TypeError):
+        return ts
+
+
+def cmd_ingest(args: argparse.Namespace) -> None:
+    """Parse export JSON and write turn-based Markdown.
+
+    Args:
+        args: Parsed arguments with path and output.
+    """
+    input_file = args.path
+    output_path = args.output
+    print(f"🏛️ Initializing Sovereign Ingest for: {input_file}")
+
+    adapter = OpenAIAdapter(output_path=output_path)
+    try:
+        stats = adapter.parse(input_file)
+        if stats:
+            written = stats.get("written", 0)
+            skipped = stats.get("skipped", 0)
+            protected = stats.get("protected", 0)
+            parts = [f"written {written}"]
+            if skipped:
+                parts.append(f"skipped {skipped} (unchanged)")
+            if protected:
+                parts.append(f"protected {protected} (manual edits)")
+            summary = ", ".join(parts) if any((written, skipped, protected)) else "no new turns"
+            print(f"✅ Ingestion complete. {summary}. Check {output_path} for your new history.")
+        else:
+            print(f"✅ Ingestion complete. Check {output_path} for your new history.")
     except Exception as e:
         print(f"❌ Critical Error during ingestion: {e}")
+        raise SystemExit(1)
+
+
+def cmd_index(args: argparse.Namespace) -> None:
+    """Index synapses into the vector store.
+
+    Exits with code 0 (no crash) when synapse dir is missing; logs a warning.
+
+    Args:
+        args: Parsed arguments with synapses_dir and chroma_dir.
+    """
+    synapse_dir = Path(args.synapses_dir)
+    chroma_dir = args.chroma_dir
+
+    if not synapse_dir.exists():
+        print(f"⚠️ {synapse_dir} not found. Run 'ingest' first.")
+        return
+
+    print("🧠 Indexing synapses into vector store...")
+    try:
+        store = VectorStore(persist_directory=chroma_dir)
+    except Exception as e:
+        print(f"❌ Failed to initialize vector store: {e}")
+        raise SystemExit(1)
+
+    indexed = 0
+    skipped = 0
+    failed = 0
+    for path in sorted(synapse_dir.glob("*.md")):
+        try:
+            status, doc_id = store.add_synapse(str(path))
+        except Exception as e:
+            failed += 1
+            print(f"⚠️ Skipped {path.name}: {e}")
+            continue
+
+        if status == "SUCCESS":
+            indexed += 1
+        elif status == "SKIPPED":
+            skipped += 1
+        elif status == "FAILED":
+            failed += 1
+            print(f"⚠️ Embedding failed for {path.name} (uuid={doc_id}); skipped.")
+        else:
+            raise ValueError(f"Unknown add_synapse status: {status!r}")
+
+    print(
+        f"✅ Index complete. Indexed {indexed} new synapses, skipped {skipped} existing, failed {failed}."
+    )
+
+
+def _build_uuid_to_path_map(synapse_dir: Path) -> dict[str, str]:
+    """Build uuid (short form) -> file path mapping. O(n) scan once."""
+    mapping: dict[str, str] = {}
+    if not synapse_dir.exists():
+        return mapping
+    for path in synapse_dir.glob("*.md"):
+        try:
+            post = frontmatter.load(path)
+            uuid_val = post.metadata.get("uuid")
+            if uuid_val is None:
+                continue
+            short = str(uuid_val).replace("urn:uuid:", "")
+            mapping[short] = str(path)
+        except Exception as e:
+            _logger.debug("Failed to parse %s: %s", path, e)
+    return mapping
+
+
+def cmd_query(args: argparse.Namespace) -> None:
+    """Run semantic search and print results to stdout.
+
+    Args:
+        args: Parsed arguments with query_string, n_results, synapses_dir, chroma_dir.
+    """
+    query_string = args.query_string
+    n_results = args.n_results
+    synapse_dir = Path(args.synapses_dir)
+    chroma_dir = args.chroma_dir
+
+    try:
+        store = VectorStore(persist_directory=chroma_dir)
+    except Exception as e:
+        print(f"❌ Failed to initialize vector store: {e}")
+        raise SystemExit(1)
+
+    # Over-fetch to allow deduplication; one file can have many chunks
+    fetch_n = max(n_results * 4, 10)
+    results = store.query(query_string, n_results=fetch_n)
+    if not results:
+        print("No matching synapses found.")
+        return
+
+    uuid_to_path = _build_uuid_to_path_map(synapse_dir)
+
+    # Deduplicate by file path (keep first = best match per file), then slice to requested count
+    seen_paths: set[str] = set()
+    deduped: list[dict] = []
+    for hit in results:
+        doc_id = hit["id"]
+        base_uuid = doc_id.split("#")[0]
+        file_path = uuid_to_path.get(base_uuid)
+        path_key = file_path or base_uuid
+        if path_key in seen_paths:
+            continue
+        seen_paths.add(path_key)
+        deduped.append(hit)
+    results = deduped[:n_results]
+
+    print(f"🔍 Top {len(results)} matches for: {query_string}\n")
+    for i, hit in enumerate(results, 1):
+        meta = hit.get("metadata") or {}
+        raw_ts = meta.get("original_timestamp", "—")
+        if raw_ts is None or raw_ts == "—":
+            timestamp = "—"
+        elif isinstance(raw_ts, datetime):
+            timestamp = raw_ts.strftime("%Y-%m-%d %H:%M")
+        elif isinstance(raw_ts, str):
+            timestamp = _format_timestamp(raw_ts)
+        else:
+            timestamp = str(raw_ts)
+        doc = hit.get("document") or ""
+        snippet = _clean_snippet(doc)
+        doc_id = hit["id"]
+        base_uuid = doc_id.split("#")[0]
+        file_path = uuid_to_path.get(base_uuid)
+        path_str = file_path or f"{base_uuid} (Path not found)"
+
+        print(f"--- Result {i} ---")
+        print(f"Timestamp: {timestamp}")
+        print(f"Snippet: {snippet}")
+        print(f"File: {path_str}")
+        print()
+
+
+def main() -> None:
+    """Main entry point with argparse subcommands."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
+    parser = argparse.ArgumentParser(
+        prog="main.py",
+        description="Sovereign Synapse: Ingest LLM exports and index for semantic search.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    ingest_parser = subparsers.add_parser("ingest", help="Parse export JSON into Markdown turns")
+    ingest_parser.add_argument(
+        "path",
+        metavar="PATH",
+        help="Path to conversations.json (or other export)",
+    )
+    ingest_parser.add_argument(
+        "-o",
+        "--output",
+        default="vault/synapses",
+        help="Output directory for Markdown files (default: vault/synapses)",
+    )
+    ingest_parser.set_defaults(func=cmd_ingest)
+
+    index_parser = subparsers.add_parser("index", help="Index vault/synapses into vector store")
+    index_parser.add_argument(
+        "--synapses-dir",
+        default="vault/synapses",
+        help="Directory containing synapse Markdown files (default: vault/synapses)",
+    )
+    index_parser.add_argument(
+        "--chroma-dir",
+        default="vault/chroma",
+        help="ChromaDB persistence directory (default: vault/chroma)",
+    )
+    index_parser.set_defaults(func=cmd_index)
+
+    query_parser = subparsers.add_parser("query", help="Semantic search over indexed synapses")
+    query_parser.add_argument(
+        "query_string",
+        metavar="QUERY",
+        help="Search query text",
+    )
+    query_parser.add_argument(
+        "--n-results",
+        type=int,
+        default=5,
+        help="Maximum number of results (default: 5)",
+    )
+    query_parser.add_argument(
+        "--synapses-dir",
+        default="vault/synapses",
+        help="Directory containing synapse Markdown files (default: vault/synapses)",
+    )
+    query_parser.add_argument(
+        "--chroma-dir",
+        default="vault/chroma",
+        help="ChromaDB persistence directory (default: vault/chroma)",
+    )
+    query_parser.set_defaults(func=cmd_query)
+
+    args = parser.parse_args()
+    args.func(args)
+
 
 if __name__ == "__main__":
     main()

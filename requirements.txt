@@ -1,3 +1,5 @@
-python-slugify  # For creating human-readable filenames
-pydantic        # For validating the JSON structure of exports
-jinja2          # For the Markdown templates
+chromadb==0.5.3
+ollama==0.2.1
+python-frontmatter==1.1.0
+python-slugify==8.0.4
+pyyaml==6.0.2

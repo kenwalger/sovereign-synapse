@@ -1,10 +1,13 @@
+"""Heuristic-based scanner for AI conversational noise detection."""
+
+from __future__ import annotations
+
 import re
 
+
 class ContextCleaner:
-    """
-    Heuristic-based scanner to identify and flag AI conversational noise.
-    """
-    
+    """Heuristic-based scanner to identify and flag AI conversational noise."""
+
     # Patterns that appear at the START of a response
     PREAMBLE_PATTERNS = [
         r"^Certainly!.*",
@@ -24,7 +27,14 @@ class ContextCleaner:
 
     @classmethod
     def is_preamble(cls, text: str) -> bool:
-        """Checks if the start of the text is AI boilerplate."""
+        """Check if the start of the text matches AI preamble boilerplate.
+
+        Args:
+            text: The response text to scan.
+
+        Returns:
+            True if the start matches a preamble pattern.
+        """
         if not text:
             return False
         sample = text[:200].strip()
@@ -32,7 +42,14 @@ class ContextCleaner:
 
     @classmethod
     def is_postamble(cls, text: str) -> bool:
-        """Checks if the end of the text is AI boilerplate."""
+        """Check if the end of the text matches AI postamble boilerplate.
+
+        Args:
+            text: The response text to scan.
+
+        Returns:
+            True if the end matches a postamble pattern.
+        """
         if not text:
             return False
         # Scan the last 200 characters using re.search for end-anchored patterns
