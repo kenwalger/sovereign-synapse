@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import uuid
 from datetime import datetime
@@ -11,10 +12,18 @@ from datetime import datetime
 import frontmatter
 from slugify import slugify
 
+from adapters.base import BaseAdapter
 from core.context_cleaner import ContextCleaner
 
+_logger = logging.getLogger(__name__)
 
-class OpenAIAdapter:
+
+def _safe_join_parts(parts: list[object]) -> str:
+    """Join message parts, coercing non-strings (e.g. tool-use dicts) to str."""
+    return "".join([str(p) for p in parts])
+
+
+class OpenAIAdapter(BaseAdapter):
     """Parses OpenAI conversations.json into Sovereign Synapse Markdown turns."""
 
     def __init__(self, output_path: str = "vault/synapses") -> None:
@@ -59,32 +68,37 @@ class OpenAIAdapter:
             data = json.load(f)
 
         for convo in data:
-            title = convo.get('title') or "Untitled Conversation"
-            mapping = convo.get('mapping', {})
-            
+            title = convo.get("title") or "Untitled Conversation"
+            mapping = convo.get("mapping", {})
+
             for node_id, node in mapping.items():
-                message = node.get('message')
+                message = node.get("message")
                 if not message:
                     continue
-                
-                # We find the 'user' message and look for its child 'assistant' response
-                if message.get('author', {}).get('role') == 'user':
-                    user_text = "".join(message.get('content', {}).get('parts', []))
-                    
-                    # Find children (replies)
-                    for child_id in node.get('children', []):
+
+                if message.get("author", {}).get("role") != "user":
+                    continue
+
+                try:
+                    user_text = _safe_join_parts(
+                        message.get("content", {}).get("parts", []),
+                    )
+
+                    for child_id in node.get("children", []):
                         child_node = mapping.get(child_id)
                         if not child_node:
                             continue
-                        child_msg = child_node.get('message')
+                        child_msg = child_node.get("message")
 
-                        if child_msg and child_msg.get('author', {}).get('role') == 'assistant':
-                            assistant_text = "".join(child_msg.get('content', {}).get('parts', []))
-                            create_time = message.get('create_time')
+                        if child_msg and child_msg.get("author", {}).get("role") == "assistant":
+                            assistant_text = _safe_join_parts(
+                                child_msg.get("content", {}).get("parts", []),
+                            )
+                            create_time = message.get("create_time")
                             if create_time is None:
                                 create_time = datetime.now().timestamp()
                             timestamp = datetime.fromtimestamp(create_time)
-                            
+
                             convo_id = convo.get("id")
                             if convo_id is None:
                                 convo_id = convo.get("title")
@@ -98,6 +112,12 @@ class OpenAIAdapter:
                                 model=child_msg.get("metadata", {}).get("model_slug", "gpt-unknown"),
                                 original_convo_id=original_convo_id,
                             )
+                except Exception as e:
+                    _logger.warning(
+                        "Skipping malformed turn at node %s: %s",
+                        node_id,
+                        e,
+                    )
 
     def write_turn(
         self,

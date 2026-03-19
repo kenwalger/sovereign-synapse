@@ -40,7 +40,7 @@ def cmd_index(args: argparse.Namespace) -> None:
     chroma_dir = args.chroma_dir
 
     if not synapse_dir.exists():
-        print("⚠️ vault/synapses not found. Run 'ingest' first.")
+        print(f"⚠️ {synapse_dir} not found. Run 'ingest' first.")
         return
 
     print("🧠 Indexing synapses into vector store...")

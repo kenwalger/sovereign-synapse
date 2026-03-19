@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.8] - 2026-03-18
+
+### Fixed
+- **adapters/openai_adapter.py**: Hardened string joining — `"".join([str(p) for p in parts])` to handle non-string elements (e.g. tool-use dicts) in content.parts.
+- **adapters/openai_adapter.py**: Per-turn try/except — malformed turns log a warning and are skipped instead of aborting ingestion.
+- **main.py**: Use `synapse_dir` variable in "not found" warning instead of hardcoded "vault/synapses".
+
+### Changed
+- **adapters/openai_adapter.py**: OpenAIAdapter now explicitly inherits from BaseAdapter.
+- **adapters/base.py**: `@abstractmethod` decorators with full signature for `parse` and `write_turn`; use `...` instead of `pass`.
+
+### Added
+- **tests/test_vector_store.py**: `test_parse_handles_poisoned_export_with_non_string_parts` — export with `{"tool_use": "..."}` in parts; verifies no crash.
+
 ## [0.3.7] - 2026-03-18
 
 ### Fixed

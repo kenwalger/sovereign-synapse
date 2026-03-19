@@ -224,6 +224,53 @@ And more text after it.
     assert "---" in call_input
 
 
+def test_parse_handles_poisoned_export_with_non_string_parts(tmp_path: Path) -> None:
+    """Verify ingest does not crash when content.parts contains non-string elements.
+
+    Real exports can include tool-use dicts; plain join(parts) would raise
+    TypeError. The adapter uses str() coercion and handles malformed turns.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    poisoned_json = tmp_path / "poisoned.json"
+    poisoned_json.write_text(
+        """[
+  {
+    "id": "conv-poison",
+    "title": "Poisoned",
+    "mapping": {
+      "n1": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {"parts": ["Hello", {"tool_use": {"id": "x", "name": "foo"}}]},
+          "create_time": 1719000000
+        },
+        "children": ["n2"]
+      },
+      "n2": {
+        "message": {
+          "author": {"role": "assistant"},
+          "content": {"parts": ["Hi!", {"type": "tool_result", "content": "ok"}]}
+        }
+      }
+    }
+  }
+]
+""",
+        encoding="utf-8",
+    )
+
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    adapter.parse(str(poisoned_json))
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) >= 1
+    content = md_files[0].read_text(encoding="utf-8")
+    assert "Hello" in content
+    assert "Hi!" in content
+
+
 def test_parse_handles_none_convo_id(tmp_path: Path) -> None:
     """Verify parse() uses fallback when convo has id=None.
 
