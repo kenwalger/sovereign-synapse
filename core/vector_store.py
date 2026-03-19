@@ -12,8 +12,6 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
-os.environ["CHROMA_TELEMETRY_NOOP"] = "True"
-
 import chromadb
 from chromadb.config import Settings
 import frontmatter
@@ -123,6 +121,7 @@ class VectorStore:
             collection_name: Name of the ChromaDB collection.
             embedding_model: Ollama model used for embeddings.
         """
+        os.environ["CHROMA_TELEMETRY_NOOP"] = "True"
         logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
         self._persist_directory = persist_directory
         self._collection_name = collection_name
@@ -196,11 +195,13 @@ class VectorStore:
                 include=["metadatas"],
             )
             existing_ids = existing.get("ids") or []
-            if len(existing_ids) == len(chunks):
-                metas = existing.get("metadatas") or []
-                for m in metas:
-                    if m and m.get("content_hash") == content_hash:
-                        return ("SKIPPED", doc_id)
+            metas = existing.get("metadatas") or []
+            if len(existing_ids) != len(chunks):
+                pass
+            elif len(metas) == len(chunks) and all(
+                m and m.get("content_hash") == content_hash for m in metas
+            ):
+                return ("SKIPPED", doc_id)
         except Exception as e:
             _logger.warning(
                 "Could not verify existing hash for %s, proceeding with re-index: %s",
@@ -278,8 +279,12 @@ class VectorStore:
         # All embeddings succeeded; delete-before-add for atomic re-indexing
         try:
             self._collection.delete(where={"uuid": {"$eq": uuid_val}})
-        except Exception:
-            _logger.debug("No existing chunks found for %s to delete.", uuid_val)
+        except Exception as e:
+            err_msg = str(e).lower()
+            if "not found" in err_msg or "no matching" in err_msg:
+                _logger.debug("No existing chunks for %s to delete.", uuid_val)
+            else:
+                _logger.error("Delete failed for %s: %s", uuid_val, e)
 
         # Atomic upsert (single call per file)
         if len(chunks) == 1:

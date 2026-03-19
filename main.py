@@ -17,25 +17,27 @@ import frontmatter
 from adapters import OpenAIAdapter
 from core.vector_store import VectorStore
 
+_logger = logging.getLogger(__name__)
 SNIPPET_MAX_LEN = 200
 
 
 def _clean_snippet(doc: str, max_len: int = SNIPPET_MAX_LEN) -> str:
-    """Strip boilerplate (---, created_at, updated_at); if code block, show first content line."""
+    """Skip YAML frontmatter (---), created_at/updated_at/uuid; past ```, find first human text."""
     lines = doc.split("\n")
     out: list[str] = []
-    after_code_fence = False
+    delim_count = 0
     for line in lines:
         s = line.strip()
-        if s == "---" or s.startswith("created_at:") or s.startswith("updated_at:"):
+        if s == "---":
+            delim_count += 1
+            continue
+        if delim_count == 1 or "created_at" in s or "updated_at" in s or "uuid" in s:
             continue
         if s.startswith("```"):
-            after_code_fence = True
             continue
         if s:
             out.append(line)
-            if after_code_fence or not s.startswith("```"):
-                break
+            break
     result = "\n".join(out) if out else doc
     return result[:max_len] + ("..." if len(result) > max_len else "")
 
@@ -105,9 +107,6 @@ def cmd_index(args: argparse.Namespace) -> None:
     print(
         f"✅ Index complete. Indexed {indexed} new synapses, skipped {skipped} existing, failed {failed}."
     )
-
-
-_logger = logging.getLogger(__name__)
 
 
 def _build_uuid_to_path_map(synapse_dir: Path) -> dict[str, str]:

@@ -570,6 +570,60 @@ def test_add_synapse_returns_skipped_when_content_unchanged(
     assert mock_embed.call_count == 1
 
 
+def test_partial_index_triggers_reindex(
+    tmp_path: Path,
+    temp_persist_dir: str,
+) -> None:
+    """Verify add_synapse re-indexes when chunk count mismatches (partial index).
+
+    Index a multi-chunk file, remove one chunk from ChromaDB, call add_synapse
+    again. Assert SUCCESS and full re-index (correct chunk count restored).
+    """
+    long_body = "x" * (CHUNK_SIZE * 2 + 100)  # > 2 chunks
+    content = f"""---
+uuid: urn:uuid:e2f3a4b5-c6d7-8901-efab-234567890123
+source: gpt_export
+model: gpt-4o
+---
+### User
+Long question.
+
+### Assistant
+{long_body}
+"""
+    synapse_path = tmp_path / "partial.md"
+    synapse_path.write_text(content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status1, doc_id = store.add_synapse(str(synapse_path))
+
+    assert status1 == "SUCCESS"
+    ids_after_first = store._collection.get()["ids"]
+    chunk_ids = [i for i in ids_after_first if doc_id in i]
+    assert len(chunk_ids) >= 2
+
+    # Simulate partial index: delete one chunk
+    store._collection.delete(ids=[chunk_ids[-1]])
+    ids_after_delete = store._collection.get()["ids"]
+    assert len([i for i in ids_after_delete if doc_id in i]) == len(chunk_ids) - 1
+
+    # Re-add: should trigger full re-index (chunk count mismatch)
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        status2, _ = store.add_synapse(str(synapse_path))
+
+    assert status2 == "SUCCESS"
+    ids_after_reindex = store._collection.get()["ids"]
+    restored = [i for i in ids_after_reindex if doc_id in i]
+    assert len(restored) == len(chunk_ids), "Full re-index must restore correct chunk count"
+    assert mock_embed.call_count >= 2
+
+
 def test_reindex_on_hash_mismatch(
     tmp_path: Path,
     temp_persist_dir: str,

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.27.0] - 2026-03-18 (5/5 Professional Build)
+
+### Fixed
+- **main.py**: Robust snippet cleaning — _clean_snippet skips YAML frontmatter (---), lines containing created_at/updated_at/uuid; skips triple-backtick code fences and finds first human-readable text line.
+- **core/vector_store.py**: Strict skip invariant — add_synapse returns SKIPPED only when (1) existing chunk count equals new chunk count and (2) every chunk's metadata content_hash matches current file; otherwise full re-index.
+- **core/vector_store.py**: Encapsulate side effects — move os.environ["CHROMA_TELEMETRY_NOOP"] into VectorStore.__init__; replace broad except Exception in delete step with ChromaDB-specific handling; log _logger.error when delete fails for reasons other than "not found".
+- **main.py**: Organization — move _logger definition to top of file, just below imports.
+
+### Added
+- **tests/test_vector_store.py**: test_partial_index_triggers_reindex — index multi-chunk file, remove one chunk, re-add; assert SUCCESS and full re-index restores correct chunk count.
+
+### Verified
+- All 27 tests pass.
+
 ## [0.26.0] - 2026-03-18 (5/5 Final)
 
 ### Fixed
