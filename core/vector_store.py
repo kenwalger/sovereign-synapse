@@ -149,6 +149,7 @@ class VectorStore:
         """
         if len(text) > CHUNK_SIZE:
             text = text[:CHUNK_SIZE]
+            _logger.debug("Text truncated to %d chars for embedding", CHUNK_SIZE)
             if is_query:
                 _logger.warning("Query string truncated to %d chars for embedding", CHUNK_SIZE)
         response = ollama.embed(model=self._embedding_model, input=text)
@@ -187,13 +188,15 @@ class VectorStore:
             return ("SKIPPED", doc_id)
 
         content_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
+        chunks = _chunk_text(body)
         uuid_val = metadata.get("uuid") or f"urn:uuid:{doc_id}"
         try:
             existing = self._collection.get(
                 where={"uuid": {"$eq": uuid_val}},
                 include=["metadatas"],
             )
-            if existing and existing.get("ids") and len(existing["ids"]) > 0:
+            existing_ids = existing.get("ids") or []
+            if len(existing_ids) == len(chunks):
                 metas = existing.get("metadatas") or []
                 for m in metas:
                     if m and m.get("content_hash") == content_hash:
@@ -205,7 +208,6 @@ class VectorStore:
                 e,
             )
 
-        chunks = _chunk_text(body)
         if len(chunks) > 1:
             filename = Path(file_path).name
             _logger.info(
@@ -245,7 +247,7 @@ class VectorStore:
                     return self._embed(fallback)
                 except ollama.ResponseError as e2:
                     if e2.status_code == 400:
-                        _logger.critical(
+                        _logger.error(
                             "Chunk %d for %s still fails after truncation: %s",
                             chunk_idx + 1,
                             file_path,

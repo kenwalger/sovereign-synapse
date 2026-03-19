@@ -570,6 +570,38 @@ def test_add_synapse_returns_skipped_when_content_unchanged(
     assert mock_embed.call_count == 1
 
 
+def test_reindex_on_hash_mismatch(
+    tmp_path: Path,
+    temp_persist_dir: str,
+    sample_synapse_content: str,
+) -> None:
+    """Verify add_synapse re-indexes when content changes (hash mismatch)."""
+    synapse_path = tmp_path / "synapse.md"
+    synapse_path.write_text(sample_synapse_content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status1, doc_id = store.add_synapse(str(synapse_path))
+        assert status1 == "SUCCESS"
+
+        modified = sample_synapse_content.replace(
+            "Movesense Sensor by Suunto",
+            "Garmin Fenix with raw sensor API",
+        )
+        synapse_path.write_text(modified, encoding="utf-8")
+        status2, _ = store.add_synapse(str(synapse_path))
+
+    assert status2 == "SUCCESS"
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        results = store.query("Garmin Fenix raw sensor", n_results=3)
+    assert any("Garmin" in (r.get("document") or "") for r in results)
+
+
 def test_add_synapse_returns_failed_when_embedding_empty(
     tmp_path: Path,
     temp_persist_dir: str,

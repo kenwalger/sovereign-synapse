@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.26.0] - 2026-03-18 (5/5 Final)
+
+### Fixed
+- **core/vector_store.py**: Atomic skip logic — only return SKIPPED if hash matches AND existing chunk count matches generated chunks; otherwise delete-and-re-index.
+- **core/vector_store.py**: Log level — _logger.critical → _logger.error in _embed_with_retry; add _logger.debug when text truncated.
+- **main.py**: Clean snippets — _clean_snippet strips ---, created_at, updated_at; if code block, show first content line.
+
+### Added
+- **tests/test_vector_store.py**: test_reindex_on_hash_mismatch — index, change content, re-index; assert SUCCESS and new content in store.
+
+### Verified
+- chromadb==0.5.3 pinned.
+
 ## [0.25.0] - 2026-03-18 (5/5 Perfect Score)
 
 ### Fixed

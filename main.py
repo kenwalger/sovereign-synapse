@@ -20,6 +20,26 @@ from core.vector_store import VectorStore
 SNIPPET_MAX_LEN = 200
 
 
+def _clean_snippet(doc: str, max_len: int = SNIPPET_MAX_LEN) -> str:
+    """Strip boilerplate (---, created_at, updated_at); if code block, show first content line."""
+    lines = doc.split("\n")
+    out: list[str] = []
+    after_code_fence = False
+    for line in lines:
+        s = line.strip()
+        if s == "---" or s.startswith("created_at:") or s.startswith("updated_at:"):
+            continue
+        if s.startswith("```"):
+            after_code_fence = True
+            continue
+        if s:
+            out.append(line)
+            if after_code_fence or not s.startswith("```"):
+                break
+    result = "\n".join(out) if out else doc
+    return result[:max_len] + ("..." if len(result) > max_len else "")
+
+
 def cmd_ingest(args: argparse.Namespace) -> None:
     """Parse export JSON and write turn-based Markdown.
 
@@ -137,7 +157,7 @@ def cmd_query(args: argparse.Namespace) -> None:
         meta = hit.get("metadata") or {}
         timestamp = meta.get("original_timestamp", "—")
         doc = hit.get("document") or ""
-        snippet = doc[:SNIPPET_MAX_LEN] + ("..." if len(doc) > SNIPPET_MAX_LEN else "")
+        snippet = _clean_snippet(doc)
         doc_id = hit["id"]
         base_uuid = doc_id.split("#")[0]
         file_path = uuid_to_path.get(base_uuid)
