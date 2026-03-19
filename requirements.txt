@@ -1,3 +1,7 @@
 python-slugify  # For creating human-readable filenames
 pydantic        # For validating the JSON structure of exports
 jinja2          # For the Markdown templates
+chromadb        # Vector storage for local semantic search
+ollama          # Local embeddings via mxbai-embed-large
+pytest          # Test framework
+pyyaml          # YAML frontmatter parsing for synapses

@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.0] - 2026-03-18
+
+### Added
+- **Phase 1.3: The Local Brain** — Professional-grade vector storage layer.
+- `core/vector_store.py`: `VectorStore` class using ChromaDB for local persistence.
+- `VectorStore.add_synapse(file_path)`: Reads Markdown, extracts YAML metadata, and generates embeddings via Ollama (mxbai-embed-large).
+- `tests/test_vector_store.py`: Test suite with mocked Ollama client to verify `add_synapse` parsing and embedding invocation.
+- Dependencies: `chromadb`, `ollama`, `pytest`, `pyyaml`.
+
+### Changed
+- **Style pass**: All methods in `adapters/openai_adapter.py` and `core/context_cleaner.py` now have type hints and Google-style docstrings.
+
 ## [0.2.0] - 2026-03-18
 
 ### Added

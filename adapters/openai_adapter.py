@@ -1,23 +1,47 @@
+"""OpenAI conversations.json adapter for Sovereign Synapse ingestion."""
+
+from __future__ import annotations
+
 import json
 import os
 import uuid
-from core.context_cleaner import ContextCleaner
 from datetime import datetime
+
 from slugify import slugify
 
+from core.context_cleaner import ContextCleaner
+
+
 class OpenAIAdapter:
-    """
-    Parses OpenAI conversations.json into Sovereign Synapse Markdown turns.
-    """
-    def __init__(self, output_path="vault/synapses"):
+    """Parses OpenAI conversations.json into Sovereign Synapse Markdown turns."""
+
+    def __init__(self, output_path: str = "vault/synapses") -> None:
+        """Initialize the adapter.
+
+        Args:
+            output_path: Directory where synapse Markdown files are written.
+        """
         self.output_path = output_path
 
-    def _generate_slug(self, text, length=40):
-        """Creates a human-readable slug from the first few words of a prompt."""
+    def _generate_slug(self, text: str, length: int = 40) -> str:
+        """Create a human-readable slug from the first few words of a prompt.
+
+        Args:
+            text: Source text to slugify.
+            length: Maximum number of characters to use from the start of text.
+
+        Returns:
+            A URL-safe slug string.
+        """
         return slugify(text[:length])
 
-    def parse(self, file_path):
-        with open(file_path, 'r', encoding='utf-8') as f:
+    def parse(self, file_path: str) -> None:
+        """Parse an OpenAI conversations.json export into synapse Markdown files.
+
+        Args:
+            file_path: Path to the conversations.json file.
+        """
+        with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         for convo in data:
@@ -55,18 +79,38 @@ class OpenAIAdapter:
                                 original_convo_id=convo.get('id')
                             )
 
-    def write_turn(self, user_text, assistant_text, timestamp, model, original_convo_id):
+    def write_turn(
+        self,
+        user_text: str,
+        assistant_text: str,
+        timestamp: datetime,
+        model: str,
+        original_convo_id: str,
+    ) -> None:
+        """Write a single user/assistant turn to a synapse Markdown file.
+
+        Args:
+            user_text: The user's message content.
+            assistant_text: The assistant's response content.
+            timestamp: When the turn occurred.
+            model: Model identifier (e.g., gpt-4o).
+            original_convo_id: Source conversation ID.
+        """
         slug = self._generate_slug(user_text)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
         
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)
         
+        # Create a unique but repeatable ID based on the conversation and the specific question
+        seed = f"{original_convo_id}-{user_text}"
+        unique_id = uuid.uuid5(uuid.NAMESPACE_URL, seed)
+
         os.makedirs(self.output_path, exist_ok=True)
         
         frontmatter = [
             "---",
-            f"uuid: urn:uuid:{uuid.uuid4()}",
+            f"uuid: urn:uuid:{unique_id}",
             f"source: gpt_export",
             f"model: {model}",
             f"original_timestamp: {timestamp.isoformat()}",
