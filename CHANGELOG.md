@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.6] - 2026-03-18
+
+### Added
+- **main.py**: Argparse subcommands `ingest` and `index` — aligns with README usage.
+- **main.py ingest PATH**: Parse export JSON into vault/synapses Markdown turns.
+- **main.py index**: Sweep vault/synapses and index into VectorStore (vault/chroma).
+- **tests/test_cli.py**: CLI tests for ingest (requires path, valid file) and index subcommands.
+- **tests/test_vector_store.py**: `test_write_turn_title_with_special_chars_produces_valid_yaml` — verifies titles with `#` and `{` produce parseable YAML.
+
+### Fixed
+- **adapters/openai_adapter.py**: YAML frontmatter — use `frontmatter.dumps()` for metadata serialization; special chars in `original_convo_id` (e.g. `#`, `{`, `:`) no longer break parsing.
+- **core/vector_store.py**: Optimize `query()` — check `count() == 0` before calling `ollama.embed` to avoid wasted compute on empty store.
+- **tests**: Empty-collection query test now asserts `mock_embed.assert_not_called()` to verify no embed call.
+
 ## [0.3.5] - 2026-03-18
 
 ### Fixed

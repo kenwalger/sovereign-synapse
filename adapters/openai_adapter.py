@@ -8,6 +8,7 @@ import os
 import uuid
 from datetime import datetime
 
+import frontmatter
 from slugify import slugify
 
 from core.context_cleaner import ContextCleaner
@@ -118,29 +119,28 @@ class OpenAIAdapter:
         slug = self._generate_slug(user_text)
         content_hash = self._content_hash(user_text)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}-{content_hash}.md"
-        
+
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)
-        
+
         # Create a unique but repeatable ID based on conversation, timestamp, and question
         seed = f"{original_convo_id}-{timestamp.isoformat()}-{user_text}"
         unique_id = uuid.uuid5(uuid.NAMESPACE_DNS, seed)
 
         os.makedirs(self.output_path, exist_ok=True)
-        
-        frontmatter = [
-            "---",
-            f"uuid: urn:uuid:{unique_id}",
-            "source: gpt_export",
-            f"model: {model}",
-            f"original_timestamp: {timestamp.isoformat()}",
-            f"original_convo_id: {original_convo_id}",
-            f"preamble: {'true' if has_preamble else 'false'}",
-            f"postamble: {'true' if has_postamble else 'false'}",
-            "---"
-        ]
-        
-        content = "\n".join(frontmatter) + f"\n\n### User\n{user_text}\n\n### Assistant\n{assistant_text}"
+
+        metadata = {
+            "uuid": f"urn:uuid:{unique_id}",
+            "source": "gpt_export",
+            "model": model,
+            "original_timestamp": timestamp.isoformat(),
+            "original_convo_id": original_convo_id,
+            "preamble": "true" if has_preamble else "false",
+            "postamble": "true" if has_postamble else "false",
+        }
+        body = f"### User\n{user_text}\n\n### Assistant\n{assistant_text}"
+        post = frontmatter.Post(content=body, **metadata)
+        content = frontmatter.dumps(post)
         
         with open(os.path.join(self.output_path, filename), "w", encoding="utf-8") as f:
-            f.write(content)
+            f.write(content + "\n")

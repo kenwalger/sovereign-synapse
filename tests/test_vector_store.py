@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
+
+import frontmatter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -304,6 +306,32 @@ def test_write_turn_same_minute_different_text_produces_distinct_files(tmp_path:
     assert "Second question?" in contents[1] and "First question?" not in contents[1]
 
 
+def test_write_turn_title_with_special_chars_produces_valid_yaml(tmp_path: Path) -> None:
+    """Verify conversation titles with # and { produce valid YAML frontmatter.
+
+    original_convo_id (from title fallback) must be properly quoted/escaped
+    when written to prevent YAML parse errors.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    adapter.write_turn(
+        user_text="Test?",
+        assistant_text="Answer.",
+        timestamp=datetime(2025, 9, 1, 12, 0, 0),
+        model="gpt-4o",
+        original_convo_id='Bug #123 {urgent}: fix needed',
+    )
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) == 1
+    content = md_files[0].read_text(encoding="utf-8")
+
+    post = frontmatter.loads(content)
+    assert post.get("original_convo_id") == 'Bug #123 {urgent}: fix needed'
+
+
 def test_vector_store_query_empty_collection_returns_empty_list(
     temp_persist_dir: str,
 ) -> None:
@@ -322,6 +350,7 @@ def test_vector_store_query_empty_collection_returns_empty_list(
         results = store.query("any query", n_results=5)
 
     assert results == []
+    mock_embed.assert_not_called()
 
 
 def test_vector_store_query_returns_top_matches(

@@ -175,11 +175,11 @@ class VectorStore:
             List of dicts with keys: id, document, metadata, distance.
             Empty list if the query embedding fails or the collection is empty.
         """
-        embedding = self._embed(text)
-        if not embedding:
+        if self._collection.count() == 0:
             return []
 
-        if self._collection.count() == 0:
+        embedding = self._embed(text)
+        if not embedding:
             return []
 
         results = self._collection.query(
