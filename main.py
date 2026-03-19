@@ -87,8 +87,11 @@ def cmd_index(args: argparse.Namespace) -> None:
     )
 
 
-def _resolve_uuid_to_path(synapse_dir: Path, doc_id: str) -> str | None:
-    """Find synapse file path by uuid (short or urn form)."""
+def _build_uuid_to_path_map(synapse_dir: Path) -> dict[str, str]:
+    """Build uuid (short form) -> file path mapping. O(n) scan once."""
+    mapping: dict[str, str] = {}
+    if not synapse_dir.exists():
+        return mapping
     for path in synapse_dir.glob("*.md"):
         try:
             post = frontmatter.load(path)
@@ -96,11 +99,10 @@ def _resolve_uuid_to_path(synapse_dir: Path, doc_id: str) -> str | None:
             if uuid_val is None:
                 continue
             short = str(uuid_val).replace("urn:uuid:", "")
-            if short == doc_id:
-                return str(path)
+            mapping[short] = str(path)
         except Exception:
             continue
-    return None
+    return mapping
 
 
 def cmd_query(args: argparse.Namespace) -> None:
@@ -125,14 +127,18 @@ def cmd_query(args: argparse.Namespace) -> None:
         print("No results found.")
         return
 
+    uuid_to_path = _build_uuid_to_path_map(synapse_dir)
+
     print(f"🔍 Top {len(results)} matches for: {query_string}\n")
     for i, hit in enumerate(results, 1):
         meta = hit.get("metadata") or {}
         timestamp = meta.get("original_timestamp", "—")
         doc = hit.get("document") or ""
         snippet = doc[:SNIPPET_MAX_LEN] + ("..." if len(doc) > SNIPPET_MAX_LEN else "")
-        file_path = _resolve_uuid_to_path(synapse_dir, hit["id"]) if synapse_dir.exists() else None
-        path_str = file_path or hit["id"]
+        doc_id = hit["id"]
+        base_uuid = doc_id.split("#")[0]
+        file_path = uuid_to_path.get(base_uuid)
+        path_str = file_path or f"{base_uuid} (Path not found)"
 
         print(f"--- Result {i} ---")
         print(f"Timestamp: {timestamp}")

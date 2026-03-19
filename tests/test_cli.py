@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from core.vector_store import CHUNK_SIZE
 from main import cmd_index, cmd_query
 
 
@@ -165,13 +166,14 @@ def test_query_cli_prints_results_to_stdout(
 ) -> None:
     """Verify query subcommand prints output to stdout correctly.
 
-    Indexes a synapse, then runs query; asserts Timestamp, Snippet, File appear.
+    Uses a multi-chunk document; asserts Timestamp, Snippet, File path resolution.
     """
     synapse_dir = tmp_path / "synapses"
     synapse_dir.mkdir()
-    synapse_file = synapse_dir / "test.md"
+    long_body = "x" * (CHUNK_SIZE * 2 + 100)
+    synapse_file = synapse_dir / "long-wearable.md"
     synapse_file.write_text(
-        """---
+        f"""---
 uuid: urn:uuid:q1e2r3t4-y5u6-7890-abcd-ef1234567890
 source: gpt_export
 model: gpt-4o
@@ -182,6 +184,7 @@ What wearable provides raw sensor data?
 
 ### Assistant
 The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
+{long_body}
 """,
         encoding="utf-8",
     )
@@ -209,4 +212,5 @@ The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
     assert "Timestamp" in captured.out
     assert "Snippet" in captured.out
     assert "File" in captured.out
-    assert "Movesense" in captured.out or "sensor" in captured.out.lower()
+    assert "long-wearable.md" in captured.out
+    assert "(Path not found)" not in captured.out

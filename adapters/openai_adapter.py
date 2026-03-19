@@ -36,11 +36,12 @@ def _safe_join_parts(parts: list[object]) -> str:
             text = p.get("text")
             content = p.get("content")
             val = text if text is not None else content
-            if isinstance(val, str) and val.strip():
-                result.append(val.strip())
-            elif val is not None and not (isinstance(val, str) and not val.strip()):
+            if isinstance(val, str):
+                if val.strip():
+                    result.append(val.strip())
+            elif val is not None:
                 result.append(f"\n\n```json\n{json.dumps(val, indent=2)}\n```\n\n")
-            elif val is None:
+            else:
                 result.append(f"\n\n```json\n{json.dumps(p, indent=2)}\n```\n\n")
         else:
             s = str(p)

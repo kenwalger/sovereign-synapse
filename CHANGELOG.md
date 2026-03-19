@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.20.0] - 2026-03-18 (5/5 Merge Ready)
+
+### Fixed
+- **main.py**: UUID resolution — strip #chunk-N suffix from doc_id before comparing to frontmatter UUID.
+- **main.py**: Path-not-found output — print "File: [UUID] (Path not found)" when resolution fails.
+
+### Changed
+- **main.py**: Performance — pre-build uuid→path dict once (_build_uuid_to_path_map); O(n+k) instead of O(n×k).
+- **adapters/openai_adapter.py**: _safe_join_parts — simplify to `if isinstance(val, str): ... elif val is not None: ...`.
+
+### Verified
+- ChromaDB Settings(anonymized_telemetry=False) imported and passed to PersistentClient.
+
+### Added
+- **tests/test_cli.py**: test_query_cli_prints_results_to_stdout — now uses multi-chunk doc, asserts file path resolves.
+
 ## [0.19.0] - 2026-03-18 (Local Brain)
 
 ### Added
