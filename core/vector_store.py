@@ -11,16 +11,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 import chromadb
+from chromadb.config import Settings
 import frontmatter
 import ollama
 
 # Default embedding model for local inference
 EMBEDDING_MODEL = "mxbai-embed-large"
 
-# mxbai-embed-large: aggressive limits for 512-token ceiling
-CHUNK_SIZE = 1500  # ~400 tokens
-CHUNK_OVERLAP = 200
-HARD_TRUNCATE_CHARS = 1000  # last resort when chunk still causes 400
+# Safe mode for dense technical logs; 800 chars won't exceed token limit
+CHUNK_SIZE = 800
+CHUNK_OVERLAP = 150
+HARD_TRUNCATE_CHARS = 500  # last resort when chunk still causes 400
 
 _logger = logging.getLogger(__name__)
 
@@ -121,7 +122,10 @@ class VectorStore:
         self._persist_directory = persist_directory
         self._collection_name = collection_name
         self._embedding_model = embedding_model
-        self._client = chromadb.PersistentClient(path=persist_directory)
+        self._client = chromadb.PersistentClient(
+            path=persist_directory,
+            settings=Settings(anonymized_telemetry=False),
+        )
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"},
@@ -176,14 +180,12 @@ class VectorStore:
             _logger.warning("Empty body for %s; skipping", file_path)
             return ("FAILED", doc_id)
 
-        existing = self._collection.get(ids=[doc_id])
+        # Robust dedup: check final expected chunk (doc_id for single, uuid#chunk-{N-1} for multi)
+        final_chunk_id = doc_id if len(chunks) == 1 else f"{doc_id}#chunk-{len(chunks) - 1}"
+        existing = self._collection.get(ids=[final_chunk_id])
         if existing and existing.get("ids") and len(existing["ids"]) > 0:
             return ("SKIPPED", doc_id)
         if len(chunks) > 1:
-            chunk0_id = f"{doc_id}#chunk-0"
-            existing_chunk0 = self._collection.get(ids=[chunk0_id])
-            if existing_chunk0 and existing_chunk0.get("ids") and len(existing_chunk0["ids"]) > 0:
-                return ("SKIPPED", doc_id)
             filename = Path(file_path).name
             _logger.info(
                 "Splitting %s into %d chunks due to length.",
@@ -202,7 +204,7 @@ class VectorStore:
                 safe_metadata[key] = str(value)
 
         def _embed_with_retry(chunk: str, chunk_idx: int) -> list[float] | None:
-            """Embed chunk; on 400, retry with hard truncation to 1000 chars."""
+            """Embed chunk; on 400, retry with hard truncation to HARD_TRUNCATE_CHARS."""
             try:
                 return self._embed(chunk)
             except ollama.ResponseError as e:
@@ -230,32 +232,14 @@ class VectorStore:
                         return None
                     raise
 
+        # All-or-nothing: embed all chunks before any upsert
+        embeddings_list: list[list[float]] = []
         try:
-            if len(chunks) == 1:
-                embedding = _embed_with_retry(chunks[0], 0)
-                if not embedding:
+            for i, chunk in enumerate(chunks):
+                emb = _embed_with_retry(chunk, i)
+                if not emb:
                     return ("FAILED", doc_id)
-                self._collection.upsert(
-                    ids=[doc_id],
-                    embeddings=[embedding],
-                    documents=[chunks[0]],
-                    metadatas=[safe_metadata],
-                )
-            else:
-                upserted = 0
-                for i, chunk in enumerate(chunks):
-                    embedding = _embed_with_retry(chunk, i)
-                    if not embedding:
-                        return ("FAILED", doc_id)
-                    chunk_id = f"{doc_id}#chunk-{i}"
-                    part_meta = {**safe_metadata, "part": i}
-                    self._collection.upsert(
-                        ids=[chunk_id],
-                        embeddings=[embedding],
-                        documents=[chunk],
-                        metadatas=[part_meta],
-                    )
-                    upserted += 1
+                embeddings_list.append(emb)
         except ollama.ResponseError as e:
             if e.status_code == 400:
                 _logger.warning(
@@ -266,6 +250,24 @@ class VectorStore:
             else:
                 raise
             return ("FAILED", doc_id)
+
+        # All embeddings succeeded; atomic upsert (single call per file)
+        if len(chunks) == 1:
+            self._collection.upsert(
+                ids=[doc_id],
+                embeddings=[embeddings_list[0]],
+                documents=[chunks[0]],
+                metadatas=[safe_metadata],
+            )
+        else:
+            ids_batch = [f"{doc_id}#chunk-{i}" for i in range(len(chunks))]
+            metadatas_batch = [{**safe_metadata, "part": i} for i in range(len(chunks))]
+            self._collection.upsert(
+                ids=ids_batch,
+                embeddings=embeddings_list,
+                documents=chunks,
+                metadatas=metadatas_batch,
+            )
 
         return ("SUCCESS", doc_id)
 

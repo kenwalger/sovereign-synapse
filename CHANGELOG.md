@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.17.0] - 2026-03-18 (5/5 Golden Build)
+
+### Fixed
+- **core/vector_store.py**: Atomic upserts — batch all chunks in a single upsert call; no partial writes.
+- **core/vector_store.py**: Robust dedup — always check final expected chunk ID (doc_id for single, uuid#chunk-{N-1} for multi).
+
+### Changed
+- **core/vector_store.py**: Truncation docstring — HARD_TRUNCATE_CHARS (500) instead of hardcoded 1000.
+
+### Verified
+- Telemetry silenced, all-or-nothing embedding, pydantic/jinja2 pruned.
+
+## [0.16.0] - 2026-03-18
+
+### Changed
+- **core/vector_store.py**: ChromaDB Settings(anonymized_telemetry=False) — silence telemetry noise.
+- **core/vector_store.py**: Safe chunker — 800 chars, 150 overlap (dense technical logs); HARD_TRUNCATE 500.
+
+## [0.15.0] - 2026-03-18
+
+### Fixed
+- **core/vector_store.py**: All-or-nothing embedding — generate all chunk embeddings before any upsert; if any chunk fails, add zero chunks (prevents partial/stranded data).
+- **core/vector_store.py**: Refined deduplication — check last chunk ID (uuid#chunk-{N-1}) instead of chunk-0; if last chunk missing, re-index whole file.
+
+### Removed
+- **requirements.txt**: pydantic, jinja2 (not imported in core/ or adapters/).
+
+### Added
+- **tests/test_vector_store.py**: test_add_synapse_partial_chunk_failure_adds_zero_chunks.
+
 ## [0.14.0] - 2026-03-18
 
 ### Changed

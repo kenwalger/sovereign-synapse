@@ -623,6 +623,51 @@ Long question.
     assert "c1d2e3f4-a5b6-7890-cdef-123456789abc#chunk-1" in ids
 
 
+def test_add_synapse_partial_chunk_failure_adds_zero_chunks(
+    tmp_path: Path,
+    temp_persist_dir: str,
+) -> None:
+    """Verify multi-chunk doc with embedding failure on second chunk adds zero chunks.
+
+    All-or-nothing: if any chunk fails to embed, no chunks are upserted.
+    """
+    long_body = "x" * (CHUNK_SIZE * 2 + 100)
+    content = f"""---
+uuid: urn:uuid:d1e2f3a4-b5c6-7890-defa-123456789012
+source: gpt_export
+model: gpt-4o
+---
+### User
+Long question.
+
+### Assistant
+{long_body}
+"""
+    synapse_path = tmp_path / "partial_fail.md"
+    synapse_path.write_text(content, encoding="utf-8")
+
+    call_count = 0
+
+    def mock_embed_side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            return SimpleNamespace(embeddings=[])  # fail second chunk
+        return SimpleNamespace(embeddings=[[0.1] * 1024])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.side_effect = mock_embed_side_effect
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status, doc_id = store.add_synapse(str(synapse_path))
+
+    assert status == "FAILED"
+    assert doc_id == "d1e2f3a4-b5c6-7890-defa-123456789012"
+    ids = store._collection.get()["ids"]
+    assert "d1e2f3a4-b5c6-7890-defa-123456789012#chunk-0" not in ids
+    assert "d1e2f3a4-b5c6-7890-defa-123456789012#chunk-1" not in ids
+    assert len(ids) == 0
+
+
 def test_vector_store_query_empty_collection_returns_empty_list(
     temp_persist_dir: str,
 ) -> None:
