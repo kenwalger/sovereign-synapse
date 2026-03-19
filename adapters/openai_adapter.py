@@ -156,7 +156,8 @@ class OpenAIAdapter(BaseAdapter):
         """
         slug = self._generate_slug(user_text)
         content_hash = self._content_hash(user_text)
-        filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}-{content_hash}.md"
+        convo_hash = self._content_hash(original_convo_id)
+        filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}-{convo_hash}-{content_hash}.md"
 
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)

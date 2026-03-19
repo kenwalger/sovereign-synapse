@@ -145,8 +145,8 @@ def test_write_turn_generates_unique_uuids_for_same_message_different_timestamps
     convo_id = "test-convo-123"
     model = "gpt-4o"
 
-    timestamp1 = datetime(2025, 6, 1, 10, 0, 0)
-    timestamp2 = datetime(2025, 6, 1, 10, 5, 0)
+    timestamp1 = datetime(2025, 6, 1, 10, 0, 0, tzinfo=timezone.utc)
+    timestamp2 = datetime(2025, 6, 1, 10, 5, 0, tzinfo=timezone.utc)
 
     adapter.write_turn(
         user_text=user_text,
@@ -287,8 +287,8 @@ def test_write_turn_original_timestamp_is_utc_iso(tmp_path: Path) -> None:
     md_files = list(tmp_path.glob("*.md"))
     assert len(md_files) == 1
     post = frontmatter.load(md_files[0])
-    ts = post.get("original_timestamp")
-    assert ts is not None
+    ts = str(post.get("original_timestamp", ""))
+    assert ts
     assert "+00:00" in ts or ts.endswith("Z")
 
 
@@ -348,7 +348,7 @@ def test_write_turn_same_minute_different_text_produces_distinct_files(tmp_path:
         tmp_path: Pytest temporary directory fixture.
     """
     adapter = OpenAIAdapter(output_path=str(tmp_path))
-    timestamp = datetime(2025, 8, 1, 12, 0, 0)  # Same minute
+    timestamp = datetime(2025, 8, 1, 12, 0, 0, tzinfo=timezone.utc)  # Same minute
     convo_id = "test-convo"
 
     adapter.write_turn(
@@ -387,7 +387,7 @@ def test_write_turn_title_with_special_chars_produces_valid_yaml(tmp_path: Path)
     adapter.write_turn(
         user_text="Test?",
         assistant_text="Answer.",
-        timestamp=datetime(2025, 9, 1, 12, 0, 0),
+        timestamp=datetime(2025, 9, 1, 12, 0, 0, tzinfo=timezone.utc),
         model="gpt-4o",
         original_convo_id='Bug #123 {urgent}: fix needed',
     )
@@ -397,7 +397,7 @@ def test_write_turn_title_with_special_chars_produces_valid_yaml(tmp_path: Path)
     content = md_files[0].read_text(encoding="utf-8")
 
     post = frontmatter.loads(content)
-    assert post.get("original_convo_id") == 'Bug #123 {urgent}: fix needed'
+    assert str(post.get("original_convo_id", "")) == "Bug #123 {urgent}: fix needed"
 
 
 def test_vector_store_query_empty_collection_returns_empty_list(

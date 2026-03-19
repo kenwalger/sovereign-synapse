@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.4.0] - 2026-03-18
+
+### Fixed
+- **adapters/openai_adapter.py**: Zero-collision filenames — add 6-char hash of `original_convo_id`; format `{timestamp}-{slug}-{convo_hash}-{content_hash}.md`.
+- **tests/test_vector_store.py**: All datetimes use UTC (`tzinfo=timezone.utc`); no naive datetimes.
+- **tests/test_vector_store.py**: Type-safe frontmatter assertions — `str(post.get("original_timestamp", ""))` to avoid TypeError if PyYAML returns datetime.
+- **CHANGELOG.md, README.md**: Trailing newlines.
+
+### Verified
+- **main.py**: VectorStore init error remains user-friendly (prints message, no traceback).
+
 ## [0.3.9] - 2026-03-18
 
 ### Fixed
