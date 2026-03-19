@@ -114,7 +114,7 @@ class VectorStore:
             return []
         return list(embeddings[0])
 
-    def add_synapse(self, file_path: str) -> tuple[AddResultStatus, str | None]:
+    def add_synapse(self, file_path: str) -> tuple[AddResultStatus, str]:
         """Read a synapse Markdown file, extract metadata, and add to the store.
 
         Parses the file for YAML frontmatter and body, generates an embedding
@@ -125,8 +125,8 @@ class VectorStore:
 
         Returns:
             A tuple (status, doc_id). status is "SUCCESS" (added), "SKIPPED"
-            (duplicate), or "FAILED" (embedding error). doc_id is the document
-            ID when available, or None for parsing failures before uuid extraction.
+            (duplicate), or "FAILED" (embedding error). doc_id is always a string;
+            exceptions are raised for true failures (parse error, missing uuid).
 
         Raises:
             FileNotFoundError: If the file does not exist.

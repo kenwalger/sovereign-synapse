@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.9.0] - 2026-03-18 (Phase 1.3 Final)
+
+### Added
+- **main.py**: logging.basicConfig(level=logging.INFO) at top of main() — adapter WARNING messages (e.g. skip overwrite, malformed turn) now visible in CLI.
+
+### Changed
+- **adapters/openai_adapter.py**: _safe_join_parts — for dict parts, extract part.get('text') or part.get('content'); complex tool-result wrapped in ```json``` block instead of str(dict).
+- **core/vector_store.py**: add_synapse return type tuple[AddResultStatus, str]; docstring updated (doc_id always str on return).
+
+### Verified
+- **README.md**: ingest/index commands match argparse (path positional, -o/--output, --synapses-dir, --chroma-dir defaults).
+
 ## [0.8.0] - 2026-03-18 (Golden Build)
 
 ### Fixed

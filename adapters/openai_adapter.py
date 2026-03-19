@@ -21,8 +21,25 @@ _logger = logging.getLogger(__name__)
 
 
 def _safe_join_parts(parts: list[object]) -> str:
-    """Join message parts, coercing non-strings (e.g. tool-use dicts) to str."""
-    return "".join([str(p) for p in parts])
+    """Join message parts into human-readable text; avoid dumping raw dict reprs.
+
+    For dict parts (e.g. tool_use, tool_result): extract 'text' or 'content' when
+    available. For complex tool results without readable text, wrap in a json
+    code block to preserve structure without polluting vector search.
+    """
+    result: list[str] = []
+    for p in parts:
+        if isinstance(p, str):
+            result.append(p)
+        elif isinstance(p, dict):
+            text = p.get("text") or p.get("content")
+            if isinstance(text, str) and text.strip():
+                result.append(text.strip())
+            else:
+                result.append(f"\n\n```json\n{json.dumps(p, indent=2)}\n```\n\n")
+        else:
+            result.append(str(p))
+    return "".join(result)
 
 
 class OpenAIAdapter(BaseAdapter):

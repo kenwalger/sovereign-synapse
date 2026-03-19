@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from pathlib import Path
 
 from adapters import OpenAIAdapter
@@ -67,7 +68,7 @@ def cmd_index(args: argparse.Namespace) -> None:
             skipped += 1
         elif status == "FAILED":
             failed += 1
-            print(f"⚠️ Embedding failed for {path.name} (uuid={doc_id or '?'}); skipped.")
+            print(f"⚠️ Embedding failed for {path.name} (uuid={doc_id}); skipped.")
         else:
             raise ValueError(f"Unknown add_synapse status: {status!r}")
 
@@ -78,6 +79,8 @@ def cmd_index(args: argparse.Namespace) -> None:
 
 def main() -> None:
     """Main entry point with argparse subcommands."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+
     parser = argparse.ArgumentParser(
         prog="main.py",
         description="Sovereign Synapse: Ingest LLM exports and index for semantic search.",
