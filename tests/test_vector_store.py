@@ -173,3 +173,162 @@ def test_write_turn_generates_unique_uuids_for_same_message_different_timestamps
         uuids.append(match.group(1))
 
     assert uuids[0] != uuids[1], "Identical messages with different timestamps must have distinct UUIDs"
+
+
+def test_add_synapse_handles_horizontal_rule_in_body(
+    tmp_path: Path,
+    temp_persist_dir: str,
+) -> None:
+    """Verify parser handles body content with Markdown horizontal rules (---).
+
+    python-frontmatter correctly splits YAML from body so --- in the content
+    does not confuse the parser.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        temp_persist_dir: Temporary ChromaDB persistence path.
+    """
+    content_with_hr = """---
+uuid: urn:uuid:b2c3d4e5-f6a7-8901-bcde-f23456789012
+source: gpt_export
+model: gpt-4o
+---
+### User
+Show me a divider.
+
+### Assistant
+Here is a horizontal rule:
+
+---
+
+And more text after it.
+"""
+    synapse_path = tmp_path / "with_hr.md"
+    synapse_path.write_text(content_with_hr, encoding="utf-8")
+
+    fake_embedding = [0.2] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+
+        store = VectorStore(persist_directory=temp_persist_dir)
+        doc_id = store.add_synapse(str(synapse_path))
+
+    assert doc_id == "b2c3d4e5-f6a7-8901-bcde-f23456789012"
+    # Verify the body passed to embed includes content after the ---
+    call_input = mock_embed.call_args.kwargs["input"]
+    assert "And more text after it" in call_input
+    assert "---" in call_input
+
+
+def test_parse_handles_none_convo_id(tmp_path: Path) -> None:
+    """Verify parse() uses fallback when convo has id=None.
+
+    Uses convo.get('title', 'unknown_convo') when convo.get('id') is None.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    convo_json = tmp_path / "convos.json"
+    convo_json.write_text(
+        """
+[
+  {
+    "id": null,
+    "title": "Fallback Conversation",
+    "mapping": {
+      "node1": {
+        "message": {
+          "author": {"role": "user"},
+          "content": {"parts": ["What is 2+2?"]},
+          "create_time": 1719000000
+        },
+        "children": ["node2"]
+      },
+      "node2": {
+        "message": {
+          "author": {"role": "assistant"},
+          "content": {"parts": ["Four."]}
+        }
+      }
+    }
+  }
+]
+""",
+        encoding="utf-8",
+    )
+
+    adapter.parse(str(convo_json))
+
+    md_files = list(tmp_path.glob("*.md"))
+    assert len(md_files) == 1
+    content = md_files[0].read_text(encoding="utf-8")
+    # Should use title as fallback: "Fallback Conversation"
+    assert "original_convo_id: Fallback Conversation" in content
+
+
+def test_write_turn_same_minute_different_text_produces_distinct_files(tmp_path: Path) -> None:
+    """Verify two turns in the same minute with different text do not overwrite.
+
+    The 6-char content hash ensures distinct filenames.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+    """
+    adapter = OpenAIAdapter(output_path=str(tmp_path))
+    timestamp = datetime(2025, 8, 1, 12, 0, 0)  # Same minute
+    convo_id = "test-convo"
+
+    adapter.write_turn(
+        user_text="First question?",
+        assistant_text="First answer.",
+        timestamp=timestamp,
+        model="gpt-4o",
+        original_convo_id=convo_id,
+    )
+    adapter.write_turn(
+        user_text="Second question?",
+        assistant_text="Second answer.",
+        timestamp=timestamp,
+        model="gpt-4o",
+        original_convo_id=convo_id,
+    )
+
+    md_files = sorted(tmp_path.glob("*.md"))
+    assert len(md_files) == 2
+
+    contents = [f.read_text(encoding="utf-8") for f in md_files]
+    assert "First question?" in contents[0] and "Second question?" not in contents[0]
+    assert "Second question?" in contents[1] and "First question?" not in contents[1]
+
+
+def test_vector_store_query_returns_top_matches(
+    tmp_path: Path,
+    temp_persist_dir: str,
+    sample_synapse_content: str,
+) -> None:
+    """Verify VectorStore.query embeds query and returns top matching synapses.
+
+    Args:
+        tmp_path: Pytest temporary directory fixture.
+        temp_persist_dir: Temporary ChromaDB persistence path.
+        sample_synapse_content: Valid synapse Markdown content.
+    """
+    synapse_path = tmp_path / "synapse.md"
+    synapse_path.write_text(sample_synapse_content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+
+        store = VectorStore(persist_directory=temp_persist_dir)
+        store.add_synapse(str(synapse_path))
+        results = store.query("wearable sensor data", n_results=5)
+
+    assert len(results) == 1
+    assert results[0]["id"] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    assert "Movesense" in results[0]["document"]

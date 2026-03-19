@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.4] - 2026-03-18
+
+### Fixed
+- **P1 data integrity**: Robust frontmatter parsing in `core/vector_store.py` — replaced regex with `python-frontmatter` so body content containing Markdown horizontal rules (`---`) no longer mis-splits.
+- **adapters/openai_adapter.py**: ID guard — when `convo.get('id')` is None, use `convo.get('title', 'unknown_convo')` as fallback.
+- **adapters/openai_adapter.py**: Filename uniqueness — add 6-char SHA256 hash of `user_text` to filename so different prompts in the same minute do not overwrite each other.
+
+### Added
+- **core/vector_store.py**: `query(text: str, n_results: int = 5)` — embeds query via Ollama and returns top matching synapses from ChromaDB.
+- **tests/test_vector_store.py**: `test_add_synapse_handles_horizontal_rule_in_body` — verifies parser handles `---` in body.
+- **tests/test_vector_store.py**: `test_parse_handles_none_convo_id` — verifies fallback when conversation has no id.
+- **tests/test_vector_store.py**: `test_write_turn_same_minute_different_text_produces_distinct_files` — verifies content hash prevents overwrites.
+- **tests/test_vector_store.py**: `test_vector_store_query_returns_top_matches` — verifies query method.
+
+### Changed
+- **requirements.txt**: Added `python-frontmatter==1.1.0`.
+
 ## [0.3.3] - 2026-03-18
 
 ### Fixed

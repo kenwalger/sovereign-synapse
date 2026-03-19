@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -34,6 +35,18 @@ class OpenAIAdapter:
             A URL-safe slug string.
         """
         return slugify(text[:length])
+
+    def _content_hash(self, text: str, length: int = 6) -> str:
+        """Generate a short hash of the text for filename uniqueness.
+
+        Args:
+            text: Source text to hash.
+            length: Number of hex characters to return.
+
+        Returns:
+            A short hex hash string.
+        """
+        return hashlib.sha256(text.encode()).hexdigest()[:length]
 
     def parse(self, file_path: str) -> None:
         """Parse an OpenAI conversations.json export into synapse Markdown files.
@@ -71,12 +84,13 @@ class OpenAIAdapter:
                                 create_time = datetime.now().timestamp()
                             timestamp = datetime.fromtimestamp(create_time)
                             
+                            original_convo_id = convo.get("id") or convo.get("title", "unknown_convo")
                             self.write_turn(
                                 user_text=user_text,
                                 assistant_text=assistant_text,
                                 timestamp=timestamp,
-                                model=child_msg.get('metadata', {}).get('model_slug', 'gpt-unknown'),
-                                original_convo_id=convo.get('id')
+                                model=child_msg.get("metadata", {}).get("model_slug", "gpt-unknown"),
+                                original_convo_id=original_convo_id,
                             )
 
     def write_turn(
@@ -97,7 +111,8 @@ class OpenAIAdapter:
             original_convo_id: Source conversation ID.
         """
         slug = self._generate_slug(user_text)
-        filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}.md"
+        content_hash = self._content_hash(user_text)
+        filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}-{content_hash}.md"
         
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)

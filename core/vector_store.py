@@ -7,13 +7,12 @@ Uses ChromaDB for persistence and Ollama (mxbai-embed-large) for embeddings.
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 from typing import Any
 
 import chromadb
+import frontmatter
 import ollama
-import yaml
 
 # Default embedding model for local inference
 EMBEDDING_MODEL = "mxbai-embed-large"
@@ -23,6 +22,9 @@ _logger = logging.getLogger(__name__)
 
 def _parse_synapse_markdown(file_path: str) -> tuple[dict[str, Any], str]:
     """Extract YAML frontmatter and body from a synapse Markdown file.
+
+    Uses python-frontmatter for robust parsing; correctly handles body content
+    containing Markdown horizontal rules (---) without mis-splitting.
 
     Args:
         file_path: Path to the Markdown file.
@@ -38,18 +40,15 @@ def _parse_synapse_markdown(file_path: str) -> tuple[dict[str, Any], str]:
     if not path.exists():
         raise FileNotFoundError(f"Synapse file not found: {file_path}")
 
-    content = path.read_text(encoding="utf-8")
+    try:
+        post = frontmatter.load(path)
+    except Exception as e:
+        raise ValueError(f"Failed to parse frontmatter in {file_path}: {e}") from e
 
-    match = re.match(r"^---\s*\n(.*?)\n---\s*\n*(.*)$", content, re.DOTALL)
-    if not match:
-        raise ValueError(f"No valid YAML frontmatter in {file_path}")
+    metadata = dict(post.metadata) if post.metadata else {}
+    body = post.content.strip() if post.content else ""
 
-    frontmatter_str, body = match.group(1), match.group(2)
-    metadata = yaml.safe_load(frontmatter_str)
-    if metadata is None:
-        metadata = {}
-
-    return metadata, body.strip()
+    return metadata, body
 
 
 def _extract_uuid(metadata: dict[str, Any]) -> str:
@@ -161,3 +160,45 @@ class VectorStore:
         )
 
         return doc_id
+
+    def query(self, text: str, n_results: int = 5) -> list[dict[str, Any]]:
+        """Return the top matching synapses for the given query text.
+
+        Embeds the query via Ollama and retrieves the nearest neighbors from
+        ChromaDB by cosine similarity.
+
+        Args:
+            text: Query string to search for.
+            n_results: Maximum number of results to return.
+
+        Returns:
+            List of dicts with keys: id, document, metadata, distance.
+            Empty list if the query embedding fails or the collection is empty.
+        """
+        embedding = self._embed(text)
+        if not embedding:
+            return []
+
+        results = self._collection.query(
+            query_embeddings=[embedding],
+            n_results=min(n_results, self._collection.count() or n_results),
+            include=["documents", "metadatas", "distances"],
+        )
+
+        if not results["ids"] or not results["ids"][0]:
+            return []
+
+        ids = results["ids"][0]
+        documents = results["documents"][0] if results["documents"] else [""] * len(ids)
+        metadatas = results["metadatas"][0] if results["metadatas"] else [{}] * len(ids)
+        distances = results["distances"][0] if results.get("distances") else [None] * len(ids)
+
+        return [
+            {
+                "id": doc_id,
+                "document": doc or "",
+                "metadata": meta or {},
+                "distance": dist,
+            }
+            for doc_id, doc, meta, dist in zip(ids, documents, metadatas, distances)
+        ]
