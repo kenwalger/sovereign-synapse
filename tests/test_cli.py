@@ -9,11 +9,19 @@ from pathlib import Path
 import pytest
 
 
-def _run_cli(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
-    """Run main.py with given args, return completed process."""
+def _run_cli(args: list[str], cwd: Path | None = None) -> subprocess.CompletedProcess:
+    """Run main.py with given args, return completed process.
+
+    Args:
+        args: CLI arguments (e.g., ["ingest", "path"]).
+        cwd: Working directory; defaults to project root.
+
+    Returns:
+        Completed process with stdout, stderr, returncode.
+    """
     return subprocess.run(
         [sys.executable, "main.py"] + args,
-        cwd=cwd,
+        cwd=cwd or Path.cwd(),
         capture_output=True,
         text=True,
         timeout=10,
@@ -22,13 +30,13 @@ def _run_cli(args: list[str], cwd: Path) -> subprocess.CompletedProcess:
 
 def test_ingest_requires_path() -> None:
     """Verify 'ingest' subcommand requires a path argument."""
-    result = _run_cli(["ingest"], Path.cwd())
+    result = _run_cli(["ingest"])
     assert result.returncode != 0
     assert "required" in result.stderr.lower() or "error" in result.stderr.lower()
 
 
-def test_ingest_with_valid_file(tmp_path: Path) -> None:
-    """Verify ingest subcommand parses JSON and writes Markdown."""
+def test_ingest_with_valid_file_uses_tmp_path(tmp_path: Path) -> None:
+    """Verify ingest writes only to the specified --output directory."""
     convo_json = tmp_path / "convos.json"
     convo_json.write_text(
         """[
@@ -61,20 +69,47 @@ def test_ingest_with_valid_file(tmp_path: Path) -> None:
     output_dir.mkdir()
 
     result = _run_cli(
-        ["ingest", str(convo_json)],
-        Path.cwd(),
+        ["ingest", str(convo_json), "--output", str(output_dir)],
     )
 
     assert result.returncode == 0
     assert "Ingestion complete" in result.stdout or "complete" in result.stdout.lower()
 
-    synapses_dir = Path("vault/synapses")
-    md_files = list(synapses_dir.glob("*.md")) if synapses_dir.exists() else []
+    md_files = list(output_dir.glob("*.md"))
     assert len(md_files) >= 1
 
 
-def test_index_subcommand_runs(tmp_path: Path) -> None:
-    """Verify index subcommand runs without error (may warn if no synapses)."""
-    result = _run_cli(["index"], Path.cwd())
+def test_index_missing_synapses_dir_exits_zero(tmp_path: Path) -> None:
+    """Verify index handles missing vault/synapses gracefully (exit 0, no crash)."""
+    missing_dir = tmp_path / "nonexistent" / "synapses"
+
+    result = _run_cli(
+        [
+            "index",
+            "--synapses-dir", str(missing_dir),
+            "--chroma-dir", str(tmp_path / "chroma"),
+        ],
+    )
+
+    assert result.returncode == 0
+    assert "not found" in result.stdout or "Run 'ingest'" in result.stdout
+
+
+def test_index_subcommand_zero_state(tmp_path: Path) -> None:
+    """Verify index runs in zero-state: no dependence on project filesystem.
+
+    Creates vault/synapses in tmp_path; runs index from there. Must not crash.
+    """
+    vault_synapses = tmp_path / "vault" / "synapses"
+    vault_synapses.mkdir(parents=True)
+
+    result = _run_cli(
+        [
+            "index",
+            "--synapses-dir", str(vault_synapses),
+            "--chroma-dir", str(tmp_path / "vault" / "chroma"),
+        ],
+    )
+
     assert result.returncode == 0
     assert "index" in result.stdout.lower() or "Index" in result.stdout

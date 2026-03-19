@@ -7,6 +7,7 @@ venv/
 
 # Sovereign Synapse Data
 raw_data/
+vault/chroma/
 vault/synapses/
 
 # Editor

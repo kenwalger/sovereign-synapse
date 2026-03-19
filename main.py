@@ -10,28 +10,41 @@ from core.vector_store import VectorStore
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
-    """Parse export JSON and write turn-based Markdown to vault/synapses."""
+    """Parse export JSON and write turn-based Markdown.
+
+    Args:
+        args: Parsed arguments with path and output.
+    """
     input_file = args.path
+    output_path = args.output
     print(f"🏛️ Initializing Sovereign Ingest for: {input_file}")
 
-    adapter = OpenAIAdapter(output_path="vault/synapses")
+    adapter = OpenAIAdapter(output_path=output_path)
     try:
         adapter.parse(input_file)
-        print("✅ Ingestion complete. Check vault/synapses for your new history.")
+        print(f"✅ Ingestion complete. Check {output_path} for your new history.")
     except Exception as e:
         print(f"❌ Critical Error during ingestion: {e}")
         raise SystemExit(1)
 
 
 def cmd_index(args: argparse.Namespace) -> None:
-    """Index all synapses in vault/synapses into the vector store."""
-    synapse_dir = Path("vault/synapses")
+    """Index synapses into the vector store.
+
+    Exits with code 0 (no crash) when synapse dir is missing; logs a warning.
+
+    Args:
+        args: Parsed arguments with synapses_dir and chroma_dir.
+    """
+    synapse_dir = Path(args.synapses_dir)
+    chroma_dir = args.chroma_dir
+
     if not synapse_dir.exists():
         print("⚠️ vault/synapses not found. Run 'ingest' first.")
-        raise SystemExit(1)
+        return
 
     print("🧠 Indexing synapses into vector store...")
-    store = VectorStore()
+    store = VectorStore(persist_directory=chroma_dir)
 
     count = 0
     for path in sorted(synapse_dir.glob("*.md")):
@@ -42,7 +55,7 @@ def cmd_index(args: argparse.Namespace) -> None:
         except Exception as e:
             print(f"⚠️ Skipped {path.name}: {e}")
 
-    print(f"✅ Index complete. {count} synapses indexed in vault/chroma.")
+    print(f"✅ Index complete. {count} synapses indexed in {chroma_dir}.")
 
 
 def main() -> None:
@@ -59,9 +72,25 @@ def main() -> None:
         metavar="PATH",
         help="Path to conversations.json (or other export)",
     )
+    ingest_parser.add_argument(
+        "-o",
+        "--output",
+        default="vault/synapses",
+        help="Output directory for Markdown files (default: vault/synapses)",
+    )
     ingest_parser.set_defaults(func=cmd_ingest)
 
     index_parser = subparsers.add_parser("index", help="Index vault/synapses into vector store")
+    index_parser.add_argument(
+        "--synapses-dir",
+        default="vault/synapses",
+        help="Directory containing synapse Markdown files (default: vault/synapses)",
+    )
+    index_parser.add_argument(
+        "--chroma-dir",
+        default="vault/chroma",
+        help="ChromaDB persistence directory (default: vault/chroma)",
+    )
     index_parser.set_defaults(func=cmd_index)
 
     args = parser.parse_args()

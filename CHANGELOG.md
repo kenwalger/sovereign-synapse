@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.7] - 2026-03-18
+
+### Fixed
+- **Security & isolation**: Add `vault/chroma/` to `.gitignore`; `vault/synapses/` was already present.
+- **main.py index**: When `vault/synapses` is missing, log warning and exit 0 (no crash).
+- **main.py**: Add `--output` to ingest, `--synapses-dir` and `--chroma-dir` to index for test isolation.
+
+### Changed
+- **tests/test_cli.py**: `test_ingest_with_valid_file` → `test_ingest_with_valid_file_uses_tmp_path` — uses `--output` with tmp_path; no writes to project vault.
+- **tests/test_cli.py**: `test_index_subcommand_runs` → `test_index_subcommand_zero_state` — creates dummy vault/synapses in tmp_path; zero dependence on project filesystem.
+- **tests/test_cli.py**: Add `test_index_missing_synapses_dir_exits_zero` — verifies graceful handling.
+
+### Repository cleanup (manual)
+If vault/chroma was previously committed, run:
+`git rm -r --cached vault/chroma/` to remove from index without deleting local files.
+
 ## [0.3.6] - 2026-03-18
 
 ### Added
