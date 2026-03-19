@@ -213,7 +213,7 @@ class VectorStore:
                 if len(chunk) <= HARD_TRUNCATE_CHARS:
                     raise
                 fallback = chunk[:HARD_TRUNCATE_CHARS]
-                _logger.warning(
+                _logger.info(
                     "Chunk %d for %s caused 400; retrying with %d-char truncation",
                     chunk_idx + 1,
                     file_path,
@@ -290,7 +290,11 @@ class VectorStore:
         if self._collection.count() == 0:
             return []
 
-        embedding = self._embed(text)
+        try:
+            embedding = self._embed(text)
+        except (ollama.ResponseError, Exception) as e:
+            _logger.error("Query embedding failed: %s", e)
+            return []
         if not embedding:
             return []
 

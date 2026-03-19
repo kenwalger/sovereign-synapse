@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.18.0] - 2026-03-18
+
+### Fixed
+- **core/vector_store.py**: Search resilience — wrap query embedding in try/except; on ollama.ResponseError or Exception, log error and return [] as documented.
+
+### Changed
+- **core/vector_store.py**: Chunk 400-retry log level WARNING → INFO (expected for large files).
+
+### Verified
+- ChromaDB anonymized_telemetry=False active.
+
+### Added
+- **tests/test_vector_store.py**: test_query_returns_empty_on_embedding_failure.
+
 ## [0.17.0] - 2026-03-18 (5/5 Golden Build)
 
 ### Fixed

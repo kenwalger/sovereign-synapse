@@ -718,3 +718,39 @@ def test_vector_store_query_returns_top_matches(
     assert len(results) == 1
     assert results[0]["id"] == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
     assert "Movesense" in results[0]["document"]
+
+
+def test_query_returns_empty_on_embedding_failure(
+    tmp_path: Path,
+    temp_persist_dir: str,
+    sample_synapse_content: str,
+) -> None:
+    """Verify query() returns [] when embedding fails instead of crashing.
+
+    When Ollama raises during search (e.g. unreachable, 500), query must
+    log the error and return [] as documented.
+    """
+    synapse_path = tmp_path / "synapse.md"
+    synapse_path.write_text(sample_synapse_content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    call_count = [0]
+
+    def embed_side_effect(*args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return mock_response  # add_synapse
+        raise ConnectionError("Connection refused")  # query
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.side_effect = embed_side_effect
+
+        store = VectorStore(persist_directory=temp_persist_dir)
+        status, _ = store.add_synapse(str(synapse_path))
+        assert status == "SUCCESS"
+
+        results = store.query("wearable sensor", n_results=5)
+
+    assert results == []
