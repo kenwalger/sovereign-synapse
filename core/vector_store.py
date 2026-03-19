@@ -281,10 +281,11 @@ class VectorStore:
             self._collection.delete(where={"uuid": {"$eq": uuid_val}})
         except Exception as e:
             err_msg = str(e).lower()
-            if "not found" in err_msg or "no matching" in err_msg:
+            if "not found" in err_msg or "no matching" in err_msg or "no items" in err_msg:
                 _logger.debug("No existing chunks for %s to delete.", uuid_val)
             else:
                 _logger.error("Delete failed for %s: %s", uuid_val, e)
+                return ("FAILED", doc_id)
 
         # Atomic upsert (single call per file)
         if len(chunks) == 1:

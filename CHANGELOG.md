@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.28.0] - 2026-03-18 (5/5 Final Logic Gates)
+
+### Fixed
+- **core/vector_store.py**: Strict re-indexing guard — delete must succeed before add; if delete raises (other than "no items found"), log error and return FAILED; do not proceed to upsert.
+- **main.py**: Precision snippet filtering — use s.startswith("uuid:"), s.startswith("created_at:"), s.startswith("updated_at:") instead of substring match; lines like "I need to generate a new uuid" now display in search results.
+
+### Added
+- **tests/test_vector_store.py**: test_delete_failure_aborts_upsert — mock delete to raise; assert FAILED and synapse not added.
+
+### Verified
+- Empty body (frontmatter only, no content) returns SKIPPED (nothing for embedding model to learn).
+- All 28 tests pass.
+
 ## [0.27.0] - 2026-03-18 (5/5 Professional Build)
 
 ### Fixed

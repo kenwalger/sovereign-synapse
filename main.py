@@ -31,7 +31,7 @@ def _clean_snippet(doc: str, max_len: int = SNIPPET_MAX_LEN) -> str:
         if s == "---":
             delim_count += 1
             continue
-        if delim_count == 1 or "created_at" in s or "updated_at" in s or "uuid" in s:
+        if delim_count == 1 or s.startswith("uuid:") or s.startswith("created_at:") or s.startswith("updated_at:"):
             continue
         if s.startswith("```"):
             continue

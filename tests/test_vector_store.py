@@ -624,6 +624,34 @@ Long question.
     assert mock_embed.call_count >= 2
 
 
+def test_delete_failure_aborts_upsert(
+    tmp_path: Path,
+    temp_persist_dir: str,
+    sample_synapse_content: str,
+) -> None:
+    """Verify add_synapse returns FAILED and does not upsert when delete raises."""
+    synapse_path = tmp_path / "synapse.md"
+    synapse_path.write_text(sample_synapse_content, encoding="utf-8")
+
+    fake_embedding = [0.1] * 1024
+    mock_response = SimpleNamespace(embeddings=[fake_embedding])
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = mock_response
+        store = VectorStore(persist_directory=temp_persist_dir)
+        with patch.object(
+            store._collection,
+            "delete",
+            side_effect=Exception("Connection refused"),
+        ):
+            status, doc_id = store.add_synapse(str(synapse_path))
+
+    assert status == "FAILED"
+    assert doc_id == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    ids = store._collection.get()["ids"]
+    assert not any("a1b2c3d4-e5f6-7890-abcd-ef1234567890" in i for i in ids)
+
+
 def test_reindex_on_hash_mismatch(
     tmp_path: Path,
     temp_persist_dir: str,
