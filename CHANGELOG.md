@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.25.0] - 2026-03-18 (5/5 Perfect Score)
+
+### Fixed
+- **adapters/openai_adapter.py**: Robust part extraction — if "text" exists and is not None and not "", use it; else fall back to "content". Prevents empty string in text from skipping valid content.
+- **core/vector_store.py**: Hash-check exception — log warning instead of silent pass: "Could not verify existing hash for {doc_id}, proceeding with re-index: {e}".
+- **requirements.txt**: Pin chromadb==0.5.3 for reproducibility.
+
+### Verified
+- All 25 tests pass.
+- Query returns human-readable file paths (uuid_to_path resolution).
+
 ## [0.24.0] - 2026-03-18 (5/5 Hard Mute)
 
 ### Fixed

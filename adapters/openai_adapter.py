@@ -35,7 +35,10 @@ def _safe_join_parts(parts: list[object]) -> str:
         elif isinstance(p, dict):
             text = p.get("text")
             content = p.get("content")
-            val = text if text is not None else content
+            if text is not None and text != "":
+                val = text
+            else:
+                val = content
             if isinstance(val, str):
                 if val.strip():
                     result.append(val.strip())

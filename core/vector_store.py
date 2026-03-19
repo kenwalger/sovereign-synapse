@@ -198,8 +198,12 @@ class VectorStore:
                 for m in metas:
                     if m and m.get("content_hash") == content_hash:
                         return ("SKIPPED", doc_id)
-        except Exception:
-            pass
+        except Exception as e:
+            _logger.warning(
+                "Could not verify existing hash for %s, proceeding with re-index: %s",
+                doc_id,
+                e,
+            )
 
         chunks = _chunk_text(body)
         if len(chunks) > 1:
