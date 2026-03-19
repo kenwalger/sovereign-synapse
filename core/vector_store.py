@@ -6,6 +6,7 @@ Uses ChromaDB for persistence and Ollama (mxbai-embed-large) for embeddings.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,8 @@ import yaml
 
 # Default embedding model for local inference
 EMBEDDING_MODEL = "mxbai-embed-large"
+
+_logger = logging.getLogger(__name__)
 
 
 def _parse_synapse_markdown(file_path: str) -> tuple[dict[str, Any], str]:
@@ -94,13 +97,14 @@ class VectorStore:
             text: Input text to embed.
 
         Returns:
-            A list of floats representing the embedding vector.
+            A list of floats representing the embedding vector, or empty list
+            if the response contains no embeddings.
         """
         response = ollama.embed(model=self._embedding_model, input=text)
-        embeddings = response.get("embeddings", [])
+        embeddings = response.embeddings if response.embeddings else []
         if not embeddings:
             return []
-        return embeddings[0]
+        return list(embeddings[0])
 
     def add_synapse(self, file_path: str) -> str:
         """Read a synapse Markdown file, extract metadata, and add to the store.
@@ -112,7 +116,8 @@ class VectorStore:
             file_path: Path to the synapse Markdown file.
 
         Returns:
-            The ChromaDB document ID (derived from uuid).
+            The ChromaDB document ID (derived from uuid), or empty string if
+            embeddings were empty and the document was not upserted.
 
         Raises:
             FileNotFoundError: If the file does not exist.
@@ -125,6 +130,12 @@ class VectorStore:
             raise ValueError(f"No uuid in frontmatter for {file_path}")
 
         embedding = self._embed(body)
+        if not embedding:
+            _logger.warning(
+                "Empty embeddings for %s; skipping upsert",
+                file_path,
+            )
+            return ""
 
         # ChromaDB metadata values must be str, int, float, or bool
         safe_metadata: dict[str, str | int | float | bool] = {}

@@ -104,7 +104,7 @@ class OpenAIAdapter:
         
         # Create a unique but repeatable ID based on the conversation and the specific question
         seed = f"{original_convo_id}-{user_text}"
-        unique_id = uuid.uuid5(uuid.NAMESPACE_URL, seed)
+        unique_id = uuid.uuid5(uuid.NAMESPACE_DNS, seed)
 
         os.makedirs(self.output_path, exist_ok=True)
         

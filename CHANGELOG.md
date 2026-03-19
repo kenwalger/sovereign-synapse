@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.3.1] - 2026-03-18
+
+### Fixed
+- **core/vector_store.py**: Use SDK attribute access (`response.embeddings`) instead of dict `.get()` for Ollama EmbedResponse.
+- **core/vector_store.py**: Validate embeddings before upsert; log warning and return empty string when empty.
+- **core/vector_store.py**: Ensure file ends with single trailing newline.
+- **adapters/openai_adapter.py**: Change `uuid.NAMESPACE_URL` to `uuid.NAMESPACE_DNS` for domain-like seed identifiers.
+- **tests/test_vector_store.py**: Use `tmp_path` fixture for temp files (no leaks); mock returns EmbedResponse-like object with `.embeddings` attribute; Google-style docstrings.
+
 ## [0.3.0] - 2026-03-18
 
 ### Added
