@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.24.0] - 2026-03-18 (5/5 Hard Mute)
+
+### Fixed
+- **core/vector_store.py**: Hard mute — logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL) at __init__ start (permanent suppression).
+- **core/vector_store.py**: Content hash flow — compute SHA-256 of body first; check ChromaDB before embed; if metadata.content_hash matches, return SKIPPED; else delete-and-add with content_hash in metadata.
+- **core/vector_store.py**: Empty synapse guard — if body empty or whitespace, return SKIPPED (no vector space for stubs).
+
+### Verified
+- cmd_index correctly reports skipped count from add_synapse return value.
+
+## [0.23.0] - 2026-03-18 (5/5 UX & Telemetry)
+
+### Fixed
+- **core/vector_store.py**: Nuclear telemetry — os.environ["CHROMA_TELEMETRY_NOOP"] = "True" before chromadb import; suppress chromadb.telemetry logger during PersistentClient init.
+- **core/vector_store.py**: Delete debug message — "No existing chunks found for {uuid} to delete." instead of exception repr.
+- **main.py**: cmd_query empty result — print "No matching synapses found." instead of "No results found."
+
+### Verified
+- SKIPPED via content_hash (query before embed/delete); empty body → SKIPPED.
+
+## [0.22.0] - 2026-03-18 (5/5 Contract & Telemetry)
+
+### Fixed
+- **core/vector_store.py**: Restore SKIPPED — content_hash check before delete-add; if existing doc has matching content_hash, return SKIPPED (restores CLI skipped counter).
+- **core/vector_store.py**: Empty body — return SKIPPED instead of FAILED.
+- **core/vector_store.py**: Delete exception — _logger.debug("Optional delete failed (normal if new): %s", e) instead of silent pass.
+- **core/vector_store.py**: Telemetry — Settings(anonymized_telemetry=False, allow_reset=True).
+- **adapters/openai_adapter.py**: UUID semantic fix — NAMESPACE_URL instead of NAMESPACE_DNS for turn-ID.
+
+### Changed
+- **core/vector_store.py**: Store content_hash in metadata for skip detection.
+- **requirements.txt**: chromadb>=0.5.0 to match Settings usage.
+- **tests**: test_add_synapse_returns_skipped_when_content_unchanged (asserts no re-embed on unchanged file).
+
 ## [0.21.0] - 2026-03-18 (5/5 Data Integrity)
 
 ### Fixed

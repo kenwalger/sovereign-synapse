@@ -127,7 +127,7 @@ def cmd_query(args: argparse.Namespace) -> None:
 
     results = store.query(query_string, n_results=n_results)
     if not results:
-        print("No results found.")
+        print("No matching synapses found.")
         return
 
     uuid_to_path = _build_uuid_to_path_map(synapse_dir)

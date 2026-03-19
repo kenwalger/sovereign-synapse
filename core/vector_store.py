@@ -6,9 +6,13 @@ Uses ChromaDB for persistence and Ollama (mxbai-embed-large) for embeddings.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import os
 from pathlib import Path
 from typing import Any, Literal
+
+os.environ["CHROMA_TELEMETRY_NOOP"] = "True"
 
 import chromadb
 from chromadb.config import Settings
@@ -119,12 +123,13 @@ class VectorStore:
             collection_name: Name of the ChromaDB collection.
             embedding_model: Ollama model used for embeddings.
         """
+        logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
         self._persist_directory = persist_directory
         self._collection_name = collection_name
         self._embedding_model = embedding_model
         self._client = chromadb.PersistentClient(
             path=persist_directory,
-            settings=Settings(anonymized_telemetry=False),
+            settings=Settings(anonymized_telemetry=False, allow_reset=True),
         )
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
@@ -177,11 +182,26 @@ class VectorStore:
         if not doc_id:
             raise ValueError(f"No uuid in frontmatter for {file_path}")
 
-        chunks = _chunk_text(body)
-        if not chunks:
-            _logger.warning("Empty body for %s; skipping", file_path)
-            return ("FAILED", doc_id)
+        if not body or not body.strip():
+            _logger.info("Empty body for %s; skipping", file_path)
+            return ("SKIPPED", doc_id)
 
+        content_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
+        uuid_val = metadata.get("uuid") or f"urn:uuid:{doc_id}"
+        try:
+            existing = self._collection.get(
+                where={"uuid": {"$eq": uuid_val}},
+                include=["metadatas"],
+            )
+            if existing and existing.get("ids") and len(existing["ids"]) > 0:
+                metas = existing.get("metadatas") or []
+                for m in metas:
+                    if m and m.get("content_hash") == content_hash:
+                        return ("SKIPPED", doc_id)
+        except Exception:
+            pass
+
+        chunks = _chunk_text(body)
         if len(chunks) > 1:
             filename = Path(file_path).name
             _logger.info(
@@ -199,6 +219,7 @@ class VectorStore:
                 safe_metadata[key] = value
             else:
                 safe_metadata[key] = str(value)
+        safe_metadata["content_hash"] = content_hash
 
         def _embed_with_retry(chunk: str, chunk_idx: int) -> list[float] | None:
             """Embed chunk; on 400, retry with hard truncation to HARD_TRUNCATE_CHARS."""
@@ -249,11 +270,10 @@ class VectorStore:
             return ("FAILED", doc_id)
 
         # All embeddings succeeded; delete-before-add for atomic re-indexing
-        uuid_val = metadata.get("uuid") or f"urn:uuid:{doc_id}"
         try:
             self._collection.delete(where={"uuid": {"$eq": uuid_val}})
         except Exception:
-            pass  # No existing entries or metadata format differs; proceed with add
+            _logger.debug("No existing chunks found for %s to delete.", uuid_val)
 
         # Atomic upsert (single call per file)
         if len(chunks) == 1:

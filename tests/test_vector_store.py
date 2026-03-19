@@ -546,12 +546,12 @@ def test_write_turn_identical_content_preserves_mtime(tmp_path: Path) -> None:
     assert mtime_before == mtime_after
 
 
-def test_add_synapse_reindex_returns_success(
+def test_add_synapse_returns_skipped_when_content_unchanged(
     tmp_path: Path,
     temp_persist_dir: str,
     sample_synapse_content: str,
 ) -> None:
-    """Verify add_synapse uses delete-before-add; re-index returns SUCCESS."""
+    """Verify add_synapse returns SKIPPED when content_hash matches (no re-embed)."""
     synapse_path = tmp_path / "synapse.md"
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
@@ -565,10 +565,9 @@ def test_add_synapse_reindex_returns_success(
         status2, doc_id2 = store.add_synapse(str(synapse_path))
 
     assert status1 == "SUCCESS"
-    assert status2 == "SUCCESS"
+    assert status2 == "SKIPPED"
     assert doc_id1 == doc_id2 == "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
-    ids = store._collection.get()["ids"]
-    assert "a1b2c3d4-e5f6-7890-abcd-ef1234567890" in ids
+    assert mock_embed.call_count == 1
 
 
 def test_add_synapse_returns_failed_when_embedding_empty(
