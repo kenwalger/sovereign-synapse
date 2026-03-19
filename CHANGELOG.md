@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.32.0] - 2026-03-18 (5/5 Logic Gaps Closed)
+
+### Fixed
+- **main.py**: Search over-fetching — request n_results * 4 (min 10) from vector store; deduplicate by file path, then slice to n_results for unique file count.
+- **core/vector_store.py**: UUID type consistency — uuid_val = str(metadata.get("uuid")); store uuid as string in safe_metadata for ChromaDB where-clause match (fixes stale entries).
+- **core/vector_store.py**: _embed logging — one event, one log; remove redundant debug when is_query=True, keep warning only.
+- **adapters/openai_adapter.py**: Strict stats — stats[status] += 1 (KeyError on unregistered status).
+
+### Added
+- **tests/test_cli.py**: test_query_deduplicates_chunks_respects_n_results — mock multi-chunk from same file; assert --n-results unique files.
+
 ## [0.31.0] - 2026-03-18 (5/5 Finish Line)
 
 ### Fixed

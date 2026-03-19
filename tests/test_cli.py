@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.vector_store import CHUNK_SIZE
+from core.vector_store import CHUNK_SIZE, VectorStore
 from main import cmd_index, cmd_query
 
 
@@ -219,3 +219,75 @@ The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
     snippet_section = captured.out.split("Snippet:")[1].split("File:")[0] if "Snippet:" in captured.out else ""
     assert "\n" in snippet_section or "Movesense" in snippet_section, "Snippet should show multi-line content, not just ### User"
     assert "uuid:" not in snippet_section and "### User" not in snippet_section, "Snippet should skip metadata and headers"
+
+
+def test_query_deduplicates_chunks_respects_n_results(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Verify cmd_query returns exactly n_results unique files when over-fetching.
+
+    Mocks store.query to return multiple chunks from the same file; deduplication
+    and slice must yield exactly --n-results unique files.
+    """
+    synapse_dir = tmp_path / "synapses"
+    synapse_dir.mkdir()
+    # Create two synapse files so uuid_to_path can resolve
+    (synapse_dir / "file-a.md").write_text(
+        """---
+uuid: urn:uuid:aaaa1111-bbbb-2222-cccc-3333dddd4444
+source: gpt_export
+model: gpt-4o
+---
+### User
+A
+
+### Assistant
+A response.
+""",
+        encoding="utf-8",
+    )
+    (synapse_dir / "file-b.md").write_text(
+        """---
+uuid: urn:uuid:bbbb2222-cccc-3333-dddd-4444eeee5555
+source: gpt_export
+model: gpt-4o
+---
+### User
+B
+
+### Assistant
+B response.
+""",
+        encoding="utf-8",
+    )
+
+    chroma_dir = str(tmp_path / "chroma")
+    # Mock query to return 4 chunks: 2 from file-a, 2 from file-b (simulating over-fetch)
+    mock_results = [
+        {"id": "aaaa1111-bbbb-2222-cccc-3333dddd4444#chunk-0", "document": "A chunk 1", "metadata": {}, "distance": 0.1},
+        {"id": "aaaa1111-bbbb-2222-cccc-3333dddd4444#chunk-1", "document": "A chunk 2", "metadata": {}, "distance": 0.2},
+        {"id": "bbbb2222-cccc-3333-dddd-4444eeee5555#chunk-0", "document": "B chunk 1", "metadata": {}, "distance": 0.3},
+        {"id": "bbbb2222-cccc-3333-dddd-4444eeee5555#chunk-1", "document": "B chunk 2", "metadata": {}, "distance": 0.4},
+    ]
+
+    with patch("core.vector_store.ollama.embed") as mock_embed:
+        mock_embed.return_value = SimpleNamespace(embeddings=[[0.1] * 1024])
+
+        with patch.object(VectorStore, "query", return_value=mock_results):
+            cmd_query(
+                argparse.Namespace(
+                    query_string="test",
+                    n_results=2,
+                    synapses_dir=str(synapse_dir),
+                    chroma_dir=chroma_dir,
+                ),
+            )
+
+    captured = capsys.readouterr()
+    # Must have exactly 2 results (one per unique file)
+    assert "--- Result 1 ---" in captured.out
+    assert "--- Result 2 ---" in captured.out
+    assert "--- Result 3 ---" not in captured.out
+    assert "file-a.md" in captured.out
+    assert "file-b.md" in captured.out

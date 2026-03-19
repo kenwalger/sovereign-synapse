@@ -148,9 +148,10 @@ class VectorStore:
         """
         if len(text) > CHUNK_SIZE:
             text = text[:CHUNK_SIZE]
-            _logger.debug("Text truncated to %d chars for embedding", CHUNK_SIZE)
             if is_query:
                 _logger.warning("Query string truncated to %d chars for embedding", CHUNK_SIZE)
+            else:
+                _logger.debug("Text truncated to %d chars for embedding", CHUNK_SIZE)
         response = ollama.embed(model=self._embedding_model, input=text)
         embeddings = response.embeddings if response.embeddings else []
         if not embeddings:
@@ -219,7 +220,7 @@ class VectorStore:
 
         content_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
         chunks = _chunk_text(body)
-        uuid_val = metadata.get("uuid")
+        uuid_val = str(metadata.get("uuid"))
         try:
             existing = self._collection.get(
                 where={"uuid": {"$eq": uuid_val}},
@@ -259,6 +260,7 @@ class VectorStore:
             else:
                 safe_metadata[key] = str(value)
         safe_metadata["content_hash"] = content_hash
+        safe_metadata["uuid"] = uuid_val  # ensure string for ChromaDB consistency
 
         # All-or-nothing: embed all chunks before any upsert
         embeddings_list: list[list[float]] = []

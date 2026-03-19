@@ -168,14 +168,16 @@ def cmd_query(args: argparse.Namespace) -> None:
         print(f"❌ Failed to initialize vector store: {e}")
         raise SystemExit(1)
 
-    results = store.query(query_string, n_results=n_results)
+    # Over-fetch to allow deduplication; one file can have many chunks
+    fetch_n = max(n_results * 4, 10)
+    results = store.query(query_string, n_results=fetch_n)
     if not results:
         print("No matching synapses found.")
         return
 
     uuid_to_path = _build_uuid_to_path_map(synapse_dir)
 
-    # Deduplicate by file path (keep first = best match per file)
+    # Deduplicate by file path (keep first = best match per file), then slice to requested count
     seen_paths: set[str] = set()
     deduped: list[dict] = []
     for hit in results:
@@ -187,7 +189,7 @@ def cmd_query(args: argparse.Namespace) -> None:
             continue
         seen_paths.add(path_key)
         deduped.append(hit)
-    results = deduped
+    results = deduped[:n_results]
 
     print(f"🔍 Top {len(results)} matches for: {query_string}\n")
     for i, hit in enumerate(results, 1):

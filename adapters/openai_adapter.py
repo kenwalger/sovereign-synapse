@@ -166,7 +166,7 @@ class OpenAIAdapter(BaseAdapter):
                         model=turn_data[3],
                         original_convo_id=turn_data[4],
                     )
-                    stats[status] = stats.get(status, 0) + 1
+                    stats[status] += 1
 
         return stats
 
