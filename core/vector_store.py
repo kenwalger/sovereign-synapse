@@ -157,6 +157,37 @@ class VectorStore:
             return []
         return list(embeddings[0])
 
+    def _embed_with_retry(
+        self, chunk: str, chunk_idx: int, file_path: str
+    ) -> list[float] | None:
+        """Embed chunk; on 400, retry with hard truncation to HARD_TRUNCATE_CHARS."""
+        try:
+            return self._embed(chunk)
+        except ollama.ResponseError as e:
+            if e.status_code != 400:
+                raise
+            if len(chunk) <= HARD_TRUNCATE_CHARS:
+                raise
+            fallback = chunk[:HARD_TRUNCATE_CHARS]
+            _logger.info(
+                "Chunk %d for %s caused 400; retrying with %d-char truncation",
+                chunk_idx + 1,
+                file_path,
+                HARD_TRUNCATE_CHARS,
+            )
+            try:
+                return self._embed(fallback)
+            except ollama.ResponseError as e2:
+                if e2.status_code == 400:
+                    _logger.error(
+                        "Chunk %d for %s still fails after truncation: %s",
+                        chunk_idx + 1,
+                        file_path,
+                        e2,
+                    )
+                    return None
+                raise
+
     def add_synapse(self, file_path: str) -> tuple[AddResultStatus, str]:
         """Read a synapse Markdown file, extract metadata, and add to the store.
 
@@ -189,8 +220,6 @@ class VectorStore:
         content_hash = hashlib.sha256(body.encode()).hexdigest()[:16]
         chunks = _chunk_text(body)
         uuid_val = metadata.get("uuid")
-        if uuid_val is None:
-            uuid_val = f"urn:uuid:{doc_id}"
         try:
             existing = self._collection.get(
                 where={"uuid": {"$eq": uuid_val}},
@@ -231,42 +260,11 @@ class VectorStore:
                 safe_metadata[key] = str(value)
         safe_metadata["content_hash"] = content_hash
 
-        def _embed_with_retry(
-            chunk: str, chunk_idx: int, fp: str
-        ) -> list[float] | None:
-            """Embed chunk; on 400, retry with hard truncation to HARD_TRUNCATE_CHARS."""
-            try:
-                return self._embed(chunk)
-            except ollama.ResponseError as e:
-                if e.status_code != 400:
-                    raise
-                if len(chunk) <= HARD_TRUNCATE_CHARS:
-                    raise
-                fallback = chunk[:HARD_TRUNCATE_CHARS]
-                _logger.info(
-                    "Chunk %d for %s caused 400; retrying with %d-char truncation",
-                    chunk_idx + 1,
-                    fp,
-                    HARD_TRUNCATE_CHARS,
-                )
-                try:
-                    return self._embed(fallback)
-                except ollama.ResponseError as e2:
-                    if e2.status_code == 400:
-                        _logger.error(
-                            "Chunk %d for %s still fails after truncation: %s",
-                            chunk_idx + 1,
-                            fp,
-                            e2,
-                        )
-                        return None
-                    raise
-
         # All-or-nothing: embed all chunks before any upsert
         embeddings_list: list[list[float]] = []
         try:
             for i, chunk in enumerate(chunks):
-                emb = _embed_with_retry(chunk, i, file_path)
+                emb = self._embed_with_retry(chunk, i, file_path)
                 if not emb:
                     return ("FAILED", doc_id)
                 embeddings_list.append(emb)

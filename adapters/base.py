@@ -31,7 +31,7 @@ class BaseAdapter(ABC):
         model: str,
         original_convo_id: str,
         **kwargs: Any,
-    ) -> None:
+    ) -> str:
         """Write a single user/assistant turn to a synapse Markdown file.
 
         Args:
@@ -41,5 +41,8 @@ class BaseAdapter(ABC):
             model: Model identifier.
             original_convo_id: Source conversation identifier.
             **kwargs: Provider-specific additional fields.
+
+        Returns:
+            Status string: "written", "skipped", or "protected".
         """
         ...
