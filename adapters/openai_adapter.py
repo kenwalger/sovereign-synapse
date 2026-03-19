@@ -25,22 +25,25 @@ def _safe_join_parts(parts: list[object]) -> str:
 
     For dict parts (e.g. tool_use, tool_result): extract 'text' or 'content' when
     available. For complex tool results without readable text, wrap in a json
-    code block to preserve structure without polluting vector search.
+    code block. Skips empty or whitespace-only parts to avoid noise in the index.
     """
     result: list[str] = []
     for p in parts:
         if isinstance(p, str):
-            result.append(p)
+            if p.strip():
+                result.append(p)
         elif isinstance(p, dict):
             text = p.get("text")
             content = p.get("content")
             val = text if text is not None else content
             if isinstance(val, str) and val.strip():
                 result.append(val.strip())
-            else:
+            elif val is None:
                 result.append(f"\n\n```json\n{json.dumps(p, indent=2)}\n```\n\n")
         else:
-            result.append(str(p))
+            s = str(p)
+            if s.strip():
+                result.append(s)
     return "".join(result)
 
 
@@ -194,8 +197,8 @@ class OpenAIAdapter(BaseAdapter):
             "model": model,
             "original_timestamp": timestamp.isoformat(),
             "original_convo_id": original_convo_id,
-            "preamble": "true" if has_preamble else "false",
-            "postamble": "true" if has_postamble else "false",
+            "preamble": has_preamble,
+            "postamble": has_postamble,
         }
         body = f"### User\n{user_text}\n\n### Assistant\n{assistant_text}"
         post = frontmatter.Post(content=body, **metadata)

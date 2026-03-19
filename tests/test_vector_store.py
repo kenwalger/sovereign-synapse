@@ -295,6 +295,8 @@ def test_write_turn_original_timestamp_is_utc_iso(tmp_path: Path) -> None:
     ts = str(post.get("original_timestamp", ""))
     assert ts
     assert "+00:00" in ts or ts.endswith("Z")
+    assert isinstance(post.get("preamble"), bool)
+    assert isinstance(post.get("postamble"), bool)
 
 
 def test_parse_handles_none_convo_id(tmp_path: Path) -> None:

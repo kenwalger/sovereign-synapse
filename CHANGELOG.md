@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.11.0] - 2026-03-18
+
+### Fixed
+- **adapters/openai_adapter.py**: Native YAML booleans — preamble and postamble now Python bool (True/False) so frontmatter serializes as native YAML (true/false without quotes).
+- **adapters/openai_adapter.py**: _safe_join_parts — skip empty or whitespace-only parts; avoid wrapping them in JSON code blocks (reduces index noise).
+
+### Added
+- **tests/test_vector_store.py**: Assert preamble and postamble are read back as bool in test_write_turn_original_timestamp_is_utc_iso.
+
 ## [0.10.0] - 2026-03-18
 
 ### Fixed
