@@ -32,9 +32,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 import chromadb
+import ollama
 from chromadb.config import Settings
 from mcp.server.fastmcp import FastMCP
-import ollama
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -278,11 +278,15 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
     if not snippets:
         return json.dumps({"error": "snippets list must not be empty"})
 
-    # Guard: cap snippet count and total character length
+    # Guard: cap snippet count and total character length; track both limits.
     capped_snippets = snippets[:REFLECT_MAX_SNIPPETS]
+    snippets_truncated = len(snippets) > REFLECT_MAX_SNIPPETS
+
     combined = "\n\n---\n\n".join(s.strip() for s in capped_snippets if s.strip())
     if not combined:
         return json.dumps({"error": "all snippets were empty"})
+
+    chars_truncated = len(combined) > REFLECT_MAX_CHARS
     combined = combined[:REFLECT_MAX_CHARS]
 
     focus_line = f"\n\nFocus question: {focus}" if focus.strip() else ""
@@ -325,7 +329,13 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
             "reflection": reflection_text,
             "themes": themes,
             "snippet_count": len(capped_snippets),
-            "truncated": len(snippets) > REFLECT_MAX_SNIPPETS,
+            "truncated": snippets_truncated or chars_truncated,
+            "truncation_reason": (
+                "snippet_count_and_chars" if snippets_truncated and chars_truncated
+                else "snippet_count" if snippets_truncated
+                else "chars" if chars_truncated
+                else None
+            ),
             "llm": REFLECT_LLM,
         },
         indent=2,

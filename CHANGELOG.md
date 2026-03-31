@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.3] - 2026-03-18 (MCP Server — truncated flag P1 fix)
+
+### Fixed
+- **mcp_server/server.py** P1: `reflect_on_memories` — `truncated` flag now correctly fires when EITHER the snippet count exceeded `REFLECT_MAX_SNIPPETS` OR the concatenated text was clipped by `REFLECT_MAX_CHARS`. Previously it only checked the snippet count.
+- **mcp_server/server.py**: Added `truncation_reason` field to the response (`"snippet_count"`, `"chars"`, `"snippet_count_and_chars"`, or `null`) so callers know exactly which limit was hit.
+- **mcp_server/server.py** PEP 8: Third-party imports sorted alphabetically (`chromadb`, `ollama`, then `from` imports).
+
 ## [0.33.2] - 2026-03-18 (MCP Server — Blog Polish)
 
 ### Changed
