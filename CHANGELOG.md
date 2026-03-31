@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.3] - 2026-03-18 (MCP Server — truncated flag P1 fix)
+
+### Fixed
+- **mcp_server/server.py** P1: `reflect_on_memories` — `truncated` flag now correctly fires when EITHER the snippet count exceeded `REFLECT_MAX_SNIPPETS` OR the concatenated text was clipped by `REFLECT_MAX_CHARS`. Previously it only checked the snippet count.
+- **mcp_server/server.py**: Added `truncation_reason` field to the response (`"snippet_count"`, `"chars"`, `"snippet_count_and_chars"`, or `null`) so callers know exactly which limit was hit.
+- **mcp_server/server.py** PEP 8: Third-party imports sorted alphabetically (`chromadb`, `ollama`, then `from` imports).
+
+## [0.33.2] - 2026-03-18 (MCP Server — Blog Polish)
+
+### Changed
+- **mcp/ → mcp_server/**: Renamed directory to avoid namespace collision with the `mcp` Python package. Updated README run commands and `mcp.json` config snippet.
+- **mcp_server/server.py**: `reflect_on_memories` now caps input to the first 10 snippets (`REFLECT_MAX_SNIPPETS`) and 15,000 characters (`REFLECT_MAX_CHARS`); response includes `truncated` flag.
+- **mcp_server/server.py**: `logging.basicConfig` moved into `_main()` so it does not hijack the root logger when the module is imported.
+- **mcp_server/server.py**: Renamed `"id"` key in `_format_hit` return dict to `"synapse_id"` to avoid shadowing the Python built-in `id`.
+- **mcp_server/server.py**: Renamed local variables `ids` → `hit_ids` (search_synapses) and `ids` → `chunk_ids` (get_recent_context) to avoid shadowing built-ins.
+
+## [0.33.1] - 2026-03-18 (MCP Server — PR Feedback)
+
+### Fixed
+- **mcp/server.py** P1: `get_recent_context` now fetches the entire collection (`limit=count`) before sorting by `original_timestamp`, ensuring the most recent entries across the whole vault are found — not just a partial window.
+- **mcp/server.py** P2: `import re` moved from inside `reflect_on_memories` body to module-level imports.
+- **mcp/server.py** P2: `search_synapses` now clamps `n_results` to `[1, 50]`, matching the guard pattern in `get_recent_context`.
+- **requirements.txt** P2: `mcp>=1.0.0` → `mcp==1.2.1` (pinned to match project dependency strategy).
+
+## [0.33.0] - 2026-03-18 (MCP Server — Agent Interface)
+
+### Added
+- **mcp/server.py**: New MCP server exposing the Synapse vault over stdio transport via the `mcp` Python SDK.
+  - `search_synapses(query, n_results=5)` — semantic search with over-fetch + dedup; returns JSON array of snippets + metadata.
+  - `get_recent_context(n=10)` — working memory; fetches last N unique synapses sorted by `original_timestamp` descending.
+  - `reflect_on_memories(snippets, focus="")` — internal LLM reflection via Ollama; surfaces 3 strategic themes across retrieved memories.
+  - Configurable via environment variables: `SYNAPSE_CHROMA_PATH`, `SYNAPSE_COLLECTION`, `SYNAPSE_EMBED_MODEL`, `SYNAPSE_REFLECT_LLM`.
+  - Graceful error handling for missing collection, ChromaDB lock, and Ollama failures.
+- **requirements.txt**: Add `mcp>=1.0.0`.
+- **README.md**: Document MCP server tools, environment variables, run command, and Cursor `mcp.json` config block.
+
 ## [0.32.0] - 2026-03-18 (5/5 Logic Gaps Closed)
 
 ### Fixed
