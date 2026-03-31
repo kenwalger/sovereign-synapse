@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.0] - 2026-03-18 (MCP Server — Agent Interface)
+
+### Added
+- **mcp/server.py**: New MCP server exposing the Synapse vault over stdio transport via the `mcp` Python SDK.
+  - `search_synapses(query, n_results=5)` — semantic search with over-fetch + dedup; returns JSON array of snippets + metadata.
+  - `get_recent_context(n=10)` — working memory; fetches last N unique synapses sorted by `original_timestamp` descending.
+  - `reflect_on_memories(snippets, focus="")` — internal LLM reflection via Ollama; surfaces 3 strategic themes across retrieved memories.
+  - Configurable via environment variables: `SYNAPSE_CHROMA_PATH`, `SYNAPSE_COLLECTION`, `SYNAPSE_EMBED_MODEL`, `SYNAPSE_REFLECT_LLM`.
+  - Graceful error handling for missing collection, ChromaDB lock, and Ollama failures.
+- **requirements.txt**: Add `mcp>=1.0.0`.
+- **README.md**: Document MCP server tools, environment variables, run command, and Cursor `mcp.json` config block.
+
 ## [0.32.0] - 2026-03-18 (5/5 Logic Gaps Closed)
 
 ### Fixed
