@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.5] - 2026-03-18 (Test suite — drop pytest-asyncio)
+
+### Fixed
+- **tests/test_mcp_server.py**: Converted all 23 `async def` tests to plain `def`. The MCP tool functions are synchronous (return `str`, not `Coroutine`); `async def` was speculative and required `pytest-asyncio`, which was never installed in the project venv.
+- **pytest.ini**: Removed `asyncio_mode = auto` (no longer needed; was causing `PytestConfigWarning: Unknown config option` on every run).
+- **requirements-dev.txt**: Removed `pytest-asyncio>=1.3.0` (no longer a dependency).
+
+### Verified
+- `pytest` reports **52 passed, 22 warnings** with zero framework warnings; remaining warnings are all upstream third-party library deprecations (ChromaDB, python-frontmatter).
+
+---
+
+## [0.33.4] - 2026-03-18 (MCP Server — test suite)
+
+### Added
+- **tests/test_mcp_server.py**: 23-test pytest-asyncio suite covering all three MCP tools with fully mocked ChromaDB and Ollama.
+  - `get_recent_context` (7 tests): newest-first sort, `n` bounds (0, 999), chunk deduplication, empty vault, ChromaDB unavailable.
+  - `search_synapses` (7 tests): chunk dedup (best-score wins), `n_results` bounds, empty query, empty vault, embedding failure.
+  - `reflect_on_memories` (9 tests): structured output, `truncated=False` for small input, `truncated=True` for chars overflow, snippet-count overflow, both limits, empty/whitespace inputs, Ollama failure, `focus` parameter forwarding.
+- **requirements-dev.txt**: `pytest-asyncio>=1.3.0` added.
+
 ## [0.33.3] - 2026-03-18 (MCP Server — truncated flag P1 fix)
 
 ### Fixed
