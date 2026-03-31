@@ -21,7 +21,7 @@ Sovereign Synapse is a local-first engine designed to aggregate fragmented intel
 ## 📁 Project Layout
 - **`adapters/`** — Translation layers (Reference: `openai_adapter.py`)
 - **`core/`** — The engine: `context_cleaner.py` and `vector_store.py`
-- **`mcp/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
+- **`mcp_server/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
 - **`vault/synapses/`** — Turn-based Markdown files (The Source of Truth)
 - **`vault/chroma/`** — Local vector persistence for semantic search
 
@@ -70,7 +70,7 @@ for result in results:
 
 ## 🤖 MCP Server (Agent Interface)
 
-`mcp/server.py` exposes the Synapse vault to any MCP-compatible host via **stdio transport**.
+`mcp_server/server.py` exposes the Synapse vault to any MCP-compatible host via **stdio transport**.
 
 ### Tools
 
@@ -78,7 +78,7 @@ for result in results:
 |---|---|
 | `search_synapses` | Semantic search — returns top N unique-file matches with snippet + metadata |
 | `get_recent_context` | Working memory — last N synapses sorted by timestamp |
-| `reflect_on_memories` | Reflection — sends snippets to a local Ollama LLM to surface 3 strategic themes |
+| `reflect_on_memories` | Reflection — sends snippets (capped: 10 / 15 000 chars) to a local Ollama LLM to surface 3 strategic themes |
 
 ### Environment Variables
 
@@ -93,10 +93,10 @@ for result in results:
 
 ```bash
 # Standard Python
-python mcp/server.py
+python mcp_server/server.py
 
 # Or with uv (no venv needed)
-uv run mcp/server.py
+uv run mcp_server/server.py
 ```
 
 ### Cursor Integration
@@ -108,7 +108,7 @@ Add this block to your Cursor MCP config (`~/.cursor/mcp.json` or workspace `.cu
   "mcpServers": {
     "sovereign-synapse": {
       "command": "python",
-      "args": ["/absolute/path/to/sovereign-synapse/mcp/server.py"],
+      "args": ["/absolute/path/to/sovereign-synapse/mcp_server/server.py"],
       "env": {
         "SYNAPSE_CHROMA_PATH": "/absolute/path/to/sovereign-synapse/vault/chroma"
       }

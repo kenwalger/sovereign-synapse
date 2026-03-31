@@ -10,9 +10,9 @@ get_recent_context       Last N synapses sorted by original_timestamp (working m
 reflect_on_memories      Identify strategic themes via Ollama (mxbai-embed-large + llm).
 
 Run (stdio transport for Cursor):
-    python mcp/server.py
+    python mcp_server/server.py
 or via uv:
-    uv run mcp/server.py
+    uv run mcp_server/server.py
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 # Resolve project root so imports work whether server.py is run from repo root
-# or from mcp/ directly.
+# or from mcp_server/ directly.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -49,9 +49,12 @@ EMBEDDING_MODEL = os.environ.get("SYNAPSE_EMBED_MODEL", "mxbai-embed-large")
 REFLECT_LLM = os.environ.get("SYNAPSE_REFLECT_LLM", "llama3")
 CHUNK_SIZE = 800  # match core/vector_store.py
 
+# Limits for reflect_on_memories to prevent context-window overflow
+REFLECT_MAX_SNIPPETS = 10
+REFLECT_MAX_CHARS = 15_000
+
 os.environ["CHROMA_TELEMETRY_NOOP"] = "True"
 logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
-logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
 _logger = logging.getLogger("synapse.mcp")
 
 # ---------------------------------------------------------------------------
@@ -106,7 +109,7 @@ def _format_hit(
     """Convert a raw ChromaDB hit to a clean dict for MCP response."""
     base_uuid = doc_id.split("#")[0]
     return {
-        "id": base_uuid,
+        "synapse_id": base_uuid,
         "chunk_id": doc_id,
         "snippet": document[:600].strip() if document else "",
         "timestamp": str(metadata.get("original_timestamp", "")),
@@ -136,7 +139,7 @@ def search_synapses(query: str, n_results: int = 5) -> str:
 
     Args:
         query:     Natural language search query.
-        n_results: Number of unique-file results to return (default 5).
+        n_results: Number of unique-file results to return (default 5, max 50).
 
     Returns:
         JSON array of matching snippets with metadata and similarity distance.
@@ -171,7 +174,7 @@ def search_synapses(query: str, n_results: int = 5) -> str:
     except Exception as e:
         return json.dumps({"error": f"ChromaDB query error: {e}"})
 
-    ids = raw.get("ids", [[]])[0]
+    hit_ids = raw.get("ids", [[]])[0]
     docs = raw.get("documents", [[]])[0]
     metas = raw.get("metadatas", [[]])[0]
     dists = raw.get("distances", [[]])[0]
@@ -179,7 +182,7 @@ def search_synapses(query: str, n_results: int = 5) -> str:
     # Deduplicate by base UUID (same file, different chunk → keep best)
     seen: set[str] = set()
     results: list[dict[str, Any]] = []
-    for doc_id, doc, meta, dist in zip(ids, docs, metas, dists):
+    for doc_id, doc, meta, dist in zip(hit_ids, docs, metas, dists):
         base = doc_id.split("#")[0]
         if base in seen:
             continue
@@ -199,7 +202,7 @@ def get_recent_context(n: int = 10) -> str:
     deduplicates to unique source files, and returns the top N.
 
     Args:
-        n: Number of recent unique synapses to return (default 10).
+        n: Number of recent unique synapses to return (default 10, max 50).
 
     Returns:
         JSON array of recent synapses with snippet and timestamp.
@@ -229,11 +232,11 @@ def get_recent_context(n: int = 10) -> str:
     except Exception as e:
         return json.dumps({"error": f"ChromaDB fetch error: {e}"})
 
-    ids = raw.get("ids") or []
+    chunk_ids = raw.get("ids") or []
     docs = raw.get("documents") or []
     metas = raw.get("metadatas") or []
 
-    items = list(zip(ids, docs, metas))
+    items = list(zip(chunk_ids, docs, metas))
 
     # Sort by original_timestamp descending (string ISO sort works for our format)
     items.sort(
@@ -262,6 +265,9 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
     Sends the snippets to a local Ollama LLM and asks it to surface 3 themes,
     patterns, or strategic insights — functioning as an internal reflection step.
 
+    Input is capped to the first 10 snippets and 15,000 characters to prevent
+    context-window overflows.
+
     Args:
         snippets: List of text snippets retrieved from the vault.
         focus:    Optional guiding question or topic for the reflection.
@@ -272,9 +278,12 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
     if not snippets:
         return json.dumps({"error": "snippets list must not be empty"})
 
-    combined = "\n\n---\n\n".join(s.strip() for s in snippets if s.strip())
+    # Guard: cap snippet count and total character length
+    capped_snippets = snippets[:REFLECT_MAX_SNIPPETS]
+    combined = "\n\n---\n\n".join(s.strip() for s in capped_snippets if s.strip())
     if not combined:
         return json.dumps({"error": "all snippets were empty"})
+    combined = combined[:REFLECT_MAX_CHARS]
 
     focus_line = f"\n\nFocus question: {focus}" if focus.strip() else ""
     prompt = (
@@ -315,7 +324,8 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
         {
             "reflection": reflection_text,
             "themes": themes,
-            "snippet_count": len(snippets),
+            "snippet_count": len(capped_snippets),
+            "truncated": len(snippets) > REFLECT_MAX_SNIPPETS,
             "llm": REFLECT_LLM,
         },
         indent=2,
@@ -326,10 +336,16 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
 # Entry point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def _main() -> None:
+    """Configure logging and start the MCP server over stdio."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s [%(name)s] %(message)s")
     _logger.info("Starting Sovereign Synapse MCP server (stdio transport)")
     _logger.info("  ChromaDB path : %s", CHROMA_PATH)
     _logger.info("  Collection    : %s", COLLECTION_NAME)
     _logger.info("  Embed model   : %s", EMBEDDING_MODEL)
     _logger.info("  Reflect LLM   : %s", REFLECT_LLM)
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    _main()

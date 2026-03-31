@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.2] - 2026-03-18 (MCP Server — Blog Polish)
+
+### Changed
+- **mcp/ → mcp_server/**: Renamed directory to avoid namespace collision with the `mcp` Python package. Updated README run commands and `mcp.json` config snippet.
+- **mcp_server/server.py**: `reflect_on_memories` now caps input to the first 10 snippets (`REFLECT_MAX_SNIPPETS`) and 15,000 characters (`REFLECT_MAX_CHARS`); response includes `truncated` flag.
+- **mcp_server/server.py**: `logging.basicConfig` moved into `_main()` so it does not hijack the root logger when the module is imported.
+- **mcp_server/server.py**: Renamed `"id"` key in `_format_hit` return dict to `"synapse_id"` to avoid shadowing the Python built-in `id`.
+- **mcp_server/server.py**: Renamed local variables `ids` → `hit_ids` (search_synapses) and `ids` → `chunk_ids` (get_recent_context) to avoid shadowing built-ins.
+
 ## [0.33.1] - 2026-03-18 (MCP Server — PR Feedback)
 
 ### Fixed
