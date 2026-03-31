@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.1] - 2026-03-18 (MCP Server — PR Feedback)
+
+### Fixed
+- **mcp/server.py** P1: `get_recent_context` now fetches the entire collection (`limit=count`) before sorting by `original_timestamp`, ensuring the most recent entries across the whole vault are found — not just a partial window.
+- **mcp/server.py** P2: `import re` moved from inside `reflect_on_memories` body to module-level imports.
+- **mcp/server.py** P2: `search_synapses` now clamps `n_results` to `[1, 50]`, matching the guard pattern in `get_recent_context`.
+- **requirements.txt** P2: `mcp>=1.0.0` → `mcp==1.2.1` (pinned to match project dependency strategy).
+
 ## [0.33.0] - 2026-03-18 (MCP Server — Agent Interface)
 
 ### Added

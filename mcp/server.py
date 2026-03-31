@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -142,6 +143,10 @@ def search_synapses(query: str, n_results: int = 5) -> str:
     """
     if not query.strip():
         return json.dumps({"error": "query must not be empty"})
+    if n_results < 1:
+        n_results = 1
+    if n_results > 50:
+        n_results = 50
 
     try:
         collection = _get_collection()
@@ -214,9 +219,11 @@ def get_recent_context(n: int = 10) -> str:
         return json.dumps({"results": [], "message": "Vault is empty — run index first."})
 
     try:
-        # Fetch more than N to allow dedup; cap at collection size
+        # Fetch the entire collection so the Python-side timestamp sort
+        # finds the most recent entries across the whole vault, not just
+        # a partial window that would miss older-inserted recent entries.
         raw = collection.get(
-            limit=min(n * 4, count),
+            limit=count,
             include=["documents", "metadatas"],
         )
     except Exception as e:
@@ -301,7 +308,6 @@ def reflect_on_memories(snippets: list[str], focus: str = "") -> str:
         )
 
     # Best-effort: extract 3 theme titles from the response (lines with leading digits)
-    import re
     theme_lines = re.findall(r"(?:^|\n)\s*(?:\d+[.)]\s*)(.+)", reflection_text)
     themes = [t.strip() for t in theme_lines[:3]] if theme_lines else []
 
