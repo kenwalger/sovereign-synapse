@@ -20,6 +20,7 @@ Sovereign Synapse is a local-first engine designed to aggregate fragmented intel
 
 ## 📁 Project Layout
 - **`adapters/`** — Translation layers (Reference: `openai_adapter.py`)
+- **`analog_bridge.py`** — Ingest scans of **handwritten** engineering notebooks (Ollama vision HTR → Sovereign Markdown → Chroma index)
 - **`core/`** — The engine: `context_cleaner.py` and `vector_store.py`
 - **`mcp_server/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
 - **`vault/synapses/`** — Turn-based Markdown files (The Source of Truth)
@@ -31,6 +32,12 @@ Sovereign Synapse is a local-first engine designed to aggregate fragmented intel
 Ensure you have **Ollama** installed and the embedding model pulled:
 ```bash
 ollama pull mxbai-embed-large
+```
+
+For **notebook scans** (Analog Bridge), also pull a **vision** model, for example:
+```bash
+ollama pull llava
+# or: ollama pull llama3.2-vision
 ```
 
 ### 2. Installation
@@ -52,6 +59,23 @@ python main.py ingest raw_data/openai/conversations.json
 # "Brainwash" the Markdown into a searchable vector index
 python main.py index
 ```
+
+### 3b. Analog Bridge (handwritten engineering notebooks)
+
+Point the script at a **root folder** of **`.png` or `.jpg` / `.jpeg`** scans (images in **subfolders** are included). The pipeline: vision model → JSON with optional LaTeX in the transcription → **Sovereign Markdown**; the file under `vault/synapses/` is only finalized **after** a successful `VectorStore` index (write temp → embed → replace). Frontmatter includes `source: physical_notebook` and `original_year` for the vector store.
+
+```bash
+# Transcribe + index (default vision model: llava)
+python analog_bridge.py path/to/scan_folder
+
+# Pause after each page to verify transcriptions and equations, then index
+python analog_bridge.py path/to/scan_folder --hitl
+
+# Use another local vision model and a default year when the page is undated
+python analog_bridge.py path/to/scan_folder --vision-model llama3.2-vision --default-year 2010
+```
+
+The vision model is prompted for Engineering Notebook HTR: dates, diagram descriptions, LaTeX-style math, **Keywords**, and **Temporal Markers** (e.g. `June 2005`), structured as JSON and then stored in human-readable synapse Markdown.
 
 ### 4. Search your History
 

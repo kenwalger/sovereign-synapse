@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.7] - 2026-04-22 (Analog Bridge — JSON/LaTeX, atomic commit, recursive scan)
+
+### Fixed
+- **`analog_bridge.py` P1 — `_json_load_loose`**: Replaced naive brace-depth scanning with a **string-aware** scan (`_outer_json_object_slice`) that tracks JSON double-quoted strings and backslash escapes, so `{` and `}` inside string values (e.g. LaTeX `\\frac{a}{b}`) no longer truncate the object before `json.loads`.
+
+### Changed
+- **`analog_bridge.py` P2 — Atomicity**: The durable synapse ``.md`` is written only after a successful vector index. Flow: HITL (if any) → write a **temp** file under the synapse dir → `VectorStore.add_synapse(temp)` → `os.replace` to the final filename. On `FAILED` or any exception, the temp is removed and the final path is not left behind in a half-committed state.
+- **`analog_bridge.py` P2 — Scan**: Image discovery now uses `Path.rglob("*")` (recursive) instead of a single directory level, so subfolders are included; `source_image` frontmatter uses a path **relative to the input root** when possible.
+
+### Added
+- **`tests/test_analog_bridge.py`**: Unit tests for string-aware JSON extraction, fenced JSON, and frontmatter validity with LaTeX in the body.
+
+## [0.33.6] - 2026-04-22 (Analog Bridge — notebook HTR)
+
+### Added
+- **`analog_bridge.py`**: Ingests a directory of `.png`/`.jpg` engineering notebook scans. Calls a local **Ollama** vision model (`llava` by default, e.g. `llama3.2-vision`) with an **Engineering Notebook HTR** system prompt that preserves dates, diagram descriptions, math (LaTeX), **Keywords**, and **Temporal Markers** (JSON in the model reply, then converted to Sovereign Markdown with `source: physical_notebook` and `original_year`). Indexes each file with :class:`core.vector_store.VectorStore` (Chroma + `mxbai-embed-large` embeddings) so metadata includes `source` and `original_year` for the vault. **`--hitl`**: human-in-the-loop — prints each transcription and waits for Enter to write and index, or `s` to skip (for verifying equations before indexing).
+- **README.md**: "Analog Bridge" section — prerequisites, example CLI, and pointer to the vision model.
+
+### Note
+- Pull a vision model once, e.g. `ollama pull llava` (or your chosen `llava` / `llama3.2-vision`).
+
 ## [0.33.5] - 2026-03-18 (Test suite — drop pytest-asyncio)
 
 ### Fixed
