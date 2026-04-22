@@ -10,6 +10,7 @@ get_recent_context        Last N synapses sorted by original_timestamp (working 
 reflect_on_memories       Identify strategic themes via Ollama (mxbai-embed-large + llm).
 query_legacy_persona      Unbroken Voice — answer *as* the user using Sovereign_Persona.json
                           and Forensic Receipts (local Ollama only).
+get_vault_policy          Read-only / Legacy Mode JSON (chroma_mutation_forbidden, error_code).
 
 Run (stdio transport for Cursor):
     python mcp_server/server.py
@@ -148,7 +149,7 @@ class _ReadOnlyCollection:
         if name in self._MUTATING:
 
             def _vault_read_only_violation(*_a: Any, **_k: Any) -> None:
-                raise RuntimeError(
+                raise PermissionError(
                     "Sovereign Synapse vault is read-only (Legacy Mode: set "
                     "SYNAPSE_MCP_READ_ONLY=1 and/or SYNAPSE_LEGACY_MODE=1; "
                     "add/update/delete/upsert on Chroma are disabled).",
@@ -164,7 +165,13 @@ def _semantic_search_results(
     n_results: int,
 ) -> list[dict[str, Any]] | str:
     """Chroma query + unique-file cap; return result dicts or an error string for JSON."""
+    requested = n_results
     n_results = min(max(1, n_results), 50)
+    if requested > 50:
+        _logger.debug(
+            "semantic search: n_results requested=%s capped to 50 (shared helper max)",
+            requested,
+        )
     if collection.count() == 0:
         return "empty"
     try:
@@ -239,9 +246,37 @@ mcp = FastMCP(
         "human–AI conversation turns. Use the provided tools to retrieve semantically "
         "relevant memories, recent context, reflective synthesis, and (when a "
         "Sovereign_Persona.json exists) the Unbroken Voice / legacy persona query with "
-        "forensic synapse receipts."
+        "forensic synapse receipts. Use get_vault_policy to see if Chroma mutations are "
+        "forbidden in Legacy / read-only mode."
     ),
 )
+
+
+@mcp.tool()
+def get_vault_policy() -> str:
+    """Return read-only / Legacy Mode policy for the embedded Chroma client.
+
+    When ``chroma_mutation_forbidden`` is true, any call to add/update/delete/upsert
+    on the collection raises :class:`PermissionError`. This tool does not mutate the vault;
+    it exists so hosts can surface a structured check before custom write paths.
+
+    Returns:
+        JSON with ``chroma_mutation_forbidden`` and the env toggles.
+    """
+    return json.dumps(
+        {
+            "chroma_mutation_forbidden": EFFECTIVE_READ_ONLY,
+            "set_via": {
+                "SYNAPSE_MCP_READ_ONLY": bool(SYNAPSE_MCP_READ_ONLY),
+                "SYNAPSE_LEGACY_MODE": bool(SYNAPSE_LEGACY_MODE),
+            },
+            "on_mutation": {
+                "error_code": "VAULT_READ_ONLY",
+                "python_exception": "PermissionError",
+            },
+        },
+        indent=2,
+    )
 
 
 @mcp.tool()
@@ -512,7 +547,7 @@ def query_legacy_persona(query: str, n_evidence: int = 8) -> str:
             {
                 "synapse_id": sid,
                 "chunk_id": r.get("chunk_id", ""),
-                "snippet_excerpt": sn[:800],
+                "snippet_excerpt": sn,
                 "original_timestamp": r.get("timestamp", ""),
             }
         )

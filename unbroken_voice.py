@@ -46,6 +46,10 @@ DEFAULT_N_SYNAPSES = 50
 DEFAULT_CHROMA_FETCH = 400
 DEFAULT_OUTPUT = Path("vault/Sovereign_Persona.json")
 
+class LegacyExtractionError(Exception):
+    """Raised when the Ollama fingerprint pass or JSON parsing fails (user-facing: Legacy Extraction Error)."""
+
+
 PERSONA_USER_PROMPT = dedent("""You are a careful analyst building a *Reasoning Fingerprint* from
 archived personal knowledge (human–AI turns, lab notes, etc.).
 
@@ -205,12 +209,30 @@ def build_sovereign_persona_payload(
     }
     user = PERSONA_USER_PROMPT + "\n\n" + json.dumps(bundle, ensure_ascii=False, indent=2)
     _logger.info("Persona extraction with Ollama model %s", model)
-    r = ollama.chat(
-        model=model,
-        messages=[{"role": "user", "content": user}],
-    )
-    raw = (r.message.content or "").strip()
-    return _parse_persona_json(raw)
+    try:
+        r = ollama.chat(
+            model=model,
+            messages=[{"role": "user", "content": user}],
+        )
+        raw = (r.message.content or "").strip()
+        return _parse_persona_json(raw)
+    except ollama.ResponseError as e:
+        _logger.debug("Ollama ResponseError during persona extraction", exc_info=True)
+        raise LegacyExtractionError(
+            f"Ollama API error (model may be missing: ollama pull {model}): {e}"
+        ) from e
+    except (json.JSONDecodeError, ValueError) as e:
+        _logger.debug("JSON parse failed for persona model output", exc_info=True)
+        raise LegacyExtractionError(f"Model output is not valid JSON: {e}") from e
+    except Exception as e:
+        _logger.debug("Unexpected error during legacy extraction", exc_info=True)
+        n = type(e).__name__
+        m = str(e).lower()
+        if n == "ConnectError" or "connect" in m or "refused" in m or "http" in n.lower():
+            raise LegacyExtractionError(
+                f"Ollama unreachable or transport error: {e}"
+            ) from e
+        raise LegacyExtractionError(f"Unexpected extraction error: {e}") from e
 
 
 def build_sovereign_persona_file(
@@ -345,13 +367,17 @@ def main() -> None:
         level=logging.WARNING if args.quiet else logging.INFO,
         format="%(levelname)s: %(message)s",
     )
-    build_sovereign_persona_file(
-        chroma_dir=args.chroma_dir,
-        output=args.output,
-        llm_model=args.llm,
-        n=args.n,
-        over_fetch=args.over_fetch,
-    )
+    try:
+        build_sovereign_persona_file(
+            chroma_dir=args.chroma_dir,
+            output=args.output,
+            llm_model=args.llm,
+            n=args.n,
+            over_fetch=args.over_fetch,
+        )
+    except LegacyExtractionError as e:
+        print("❌ Legacy Extraction Error", str(e), file=sys.stderr)
+        raise SystemExit(1) from e
     print(f"✅ Wrote {args.output}")
 
 

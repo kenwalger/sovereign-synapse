@@ -138,6 +138,7 @@ for result in results:
 | `get_recent_context` | Working memory — last N synapses sorted by timestamp |
 | `reflect_on_memories` | Reflection — sends snippets (capped: 10 / 15 000 chars) to a local Ollama LLM to surface 3 strategic themes |
 | `query_legacy_persona` | **Unbroken Voice** — answer *as* the author using `Sovereign_Persona.json` and Forensic Receipts (local Ollama); requires a prior `unbroken_voice.py` run |
+| `get_vault_policy` | Read-only / Legacy policy JSON (`chroma_mutation_forbidden`, `VAULT_READ_ONLY` / `PermissionError` on mutations) |
 
 ### Environment Variables
 

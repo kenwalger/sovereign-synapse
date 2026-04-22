@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.34.1] - 2026-04-22 (Unbroken Voice + MCP P2: errors, n_results log, read-only policy)
+
+### Fixed
+- **`unbroken_voice.py` — P2 error handling**: `build_sovereign_persona_payload` wraps the Ollama call and JSON parsing in try/except; raises **`LegacyExtractionError`** for :class:`ollama.ResponseError`, :exc:`json.JSONDecodeError` / :exc:`ValueError`, and common transport cases. The CLI prints **`❌ Legacy Extraction Error`** and exits `1` without a traceback on that path.
+- **`mcp_server/server.py` — P2 dead code**: Removed redundant `snippet_excerpt[:800]` in `query_legacy_persona` receipts; snippets are already limited by `_format_hit` to 600 characters.
+- **`mcp_server/server.py` — P2 transparency**: `_semantic_search_results` logs at **debug** when `n_results` is **capped to 50** (requested value included in the message).
+- **Read-only guard**: :class:`_ReadOnlyCollection` now raises :exc:`PermissionError` (not ``RuntimeError``) on add/update/delete/upsert/modify. New **`get_vault_policy`** MCP tool returns JSON with `chroma_mutation_forbidden`, `set_via`, and `on_mutation: {error_code, python_exception}` for host-side checks before any write path.
+
 ## [0.34.0] - 2026-04-22 (Unbroken Voice — Legacy Persona, MCP, read-only vault)
 
 ### Added

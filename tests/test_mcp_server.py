@@ -22,6 +22,7 @@ from mcp_server.server import (
     REFLECT_MAX_SNIPPETS,
     _ReadOnlyCollection,
     get_recent_context,
+    get_vault_policy,
     query_legacy_persona,
     reflect_on_memories,
     search_synapses,
@@ -478,6 +479,21 @@ def test_reflect_on_memories_focus_parameter_included_in_call():
 
 
 # ---------------------------------------------------------------------------
+# get_vault_policy
+# ---------------------------------------------------------------------------
+
+
+def test_get_vault_policy_is_valid_json():
+    """Structured policy JSON must include chroma_mutation_forbidden."""
+    raw = get_vault_policy()
+    data = json.loads(raw)
+    assert "chroma_mutation_forbidden" in data
+    assert "on_mutation" in data
+    assert data["on_mutation"].get("error_code") == "VAULT_READ_ONLY"
+    assert data["on_mutation"].get("python_exception") == "PermissionError"
+
+
+# ---------------------------------------------------------------------------
 # Read-only collection (Legacy Mode)
 # ---------------------------------------------------------------------------
 
@@ -488,7 +504,7 @@ def test_read_only_collection_blocks_mutation():
     ro = _ReadOnlyCollection(inner)
     for name in ("add", "delete", "update", "upsert", "modify"):
         fn = getattr(ro, name)
-        with pytest.raises(RuntimeError) as ex:
+        with pytest.raises(PermissionError) as ex:
             fn()
         assert "read-only" in str(ex.value).lower()
 
