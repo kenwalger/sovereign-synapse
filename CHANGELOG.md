@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.8] - 2026-04-22 (Temporal Mirror — cross-era comparison)
+
+### Added
+- **`temporal_mirror.py`**: Compare two calendar windows in the Chroma vault on a free-text topic. Uses :class:`core.vector_store.VectorStore` semantic search with over-fetch, then filters chunks by `original_timestamp` (or `original_year` as mid-year) into `--range1` and `--range2` (``YYYY`` or ``YYYY-YYYY``). Deduplicates by synapse id, takes top *N* per range, builds **Forensic Receipts** (synapse UUID + chunk id + snippet), and sends the bundle to a **local Ollama** LLM (default `llama3` or `TEMPORAL_MIRROR_LLM`) with the *Temporal Mirror* system prompt: evolutionary changes, direct contradictions, and lost knowledge. Emits a single **Temporal Mirror Report** in Markdown, with optional `-o` file output. No cloud services.
+- **`tests/test_temporal_mirror.py`**: Unit tests for range parsing, timestamp parsing, and range membership.
+
 ## [0.33.7] - 2026-04-22 (Analog Bridge — JSON/LaTeX, atomic commit, recursive scan)
 
 ### Fixed
