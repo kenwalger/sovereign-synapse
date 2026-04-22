@@ -66,3 +66,42 @@ def test_in_range() -> None:
         {"original_timestamp": "2011-01-01T00:00:00Z"},
     )
     assert _in_range(m2, r) is False
+
+
+def test_format_report_both_forensic_sections_when_one_range_empty() -> None:
+    """Empty range still gets a section; the other still lists UUIDs."""
+    from temporal_mirror import (
+        EraContext,
+        _format_report_markdown,
+    )
+
+    ctx1 = EraContext(
+        label="R1",
+        range_spec="2005-2006",
+        items=[],
+    )
+    ctx2 = EraContext(
+        label="R2",
+        range_spec="2020-2021",
+        items=[
+            {
+                "synapse_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "chunk_id": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee#chunk-0",
+                "snippet": "test body",
+                "original_timestamp": "2020-06-01T00:00:00+00:00",
+            }
+        ],
+    )
+    out = _format_report_markdown(
+        topic="x",
+        range1="2005-2006",
+        range2="2020-2021",
+        llm_model="llama3",
+        ctx1=ctx1,
+        ctx2=ctx2,
+        analysis="_Mirror text._",
+    )
+    assert "## Forensic Receipts" in out
+    assert "no Forensic UUIDs for this range" in out
+    assert "urn:uuid:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" in out
+    assert "Mirror Synthesis" in out

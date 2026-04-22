@@ -92,6 +92,10 @@ python temporal_mirror.py "gait analysis" --range1 "2015" --range2 "2024-2025" -
 
 Pull the default chat model if needed: `ollama pull llama3`. Set `TEMPORAL_MIRROR_LLM` to default a different model.
 
+If the mirror fails with `❌ Ollama error: Ensure the Ollama service is running locally.`, start the Ollama app/daemon and confirm `ollama list` works, then re-run the command.
+
+For scripting, use `TemporalMirror(chroma_dir=..., llm_model=...).build_report(...)`; the CLI wraps the same class.
+
 ### 4. Search your History
 
 ```python
