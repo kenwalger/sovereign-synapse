@@ -21,6 +21,7 @@ Sovereign Synapse is a local-first engine designed to aggregate fragmented intel
 ## 📁 Project Layout
 - **`adapters/`** — Translation layers (Reference: `openai_adapter.py`)
 - **`analog_bridge.py`** — Ingest scans of **handwritten** engineering notebooks (Ollama vision HTR → Sovereign Markdown → Chroma index)
+- **`temporal_mirror.py`** — Compare two **time ranges** in the vault on a topic (Chroma + local Ollama; Markdown report with synapse “forensic” citations)
 - **`core/`** — The engine: `context_cleaner.py` and `vector_store.py`
 - **`mcp_server/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
 - **`vault/synapses/`** — Turn-based Markdown files (The Source of Truth)
@@ -76,6 +77,24 @@ python analog_bridge.py path/to/scan_folder --vision-model llama3.2-vision --def
 ```
 
 The vision model is prompted for Engineering Notebook HTR: dates, diagram descriptions, LaTeX-style math, **Keywords**, and **Temporal Markers** (e.g. `June 2005`), structured as JSON and then stored in human-readable synapse Markdown.
+
+### 3c. Temporal Mirror (compare two eras)
+
+Given a **topic** and two **date ranges** (inclusive, as `YYYY` or `YYYY-YYYY`), the script over-queries the Chroma index, keeps synapses whose `original_timestamp` (or `original_year`) falls in each range, and sends the top snippets to a **local** Ollama chat model to surface evolution, contradictions, and *lost* detail. The **Temporal Mirror Report** includes a forensic block per range listing `urn:uuid:…` synapse ids and short snippets, then the model synthesis. No data leaves the machine.
+
+```bash
+# Compare e.g. early work vs recent notes (5 synapses per range; write report file)
+python temporal_mirror.py "sensor calibration" --range1 "2005-2010" --range2 "2024-2026" -o reports/mirror.md
+
+# Another LLM, more candidates per range, more vector over-fetch
+python temporal_mirror.py "gait analysis" --range1 "2015" --range2 "2024-2025" -n 8 --fetch 300 --llm mistral -o mirror.md
+```
+
+Pull the default chat model if needed: `ollama pull llama3`. Set `TEMPORAL_MIRROR_LLM` to default a different model.
+
+If the mirror fails with `❌ Ollama error: Ensure the Ollama service is running locally.`, start the Ollama app/daemon and confirm `ollama list` works, then re-run the command.
+
+For scripting, use `TemporalMirror(chroma_dir=..., llm_model=...).build_report(...)`; the CLI wraps the same class.
 
 ### 4. Search your History
 

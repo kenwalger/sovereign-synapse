@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.9] - 2026-04-22 (Temporal Mirror — Ollama errors, class API, docstrings)
+
+### Fixed
+- **`temporal_mirror.py` P1 — CLI error handling**: ``main()`` now catches ``ollama.ResponseError`` and ``httpx`` connection/timeout types when available, plus a narrow fallback (``_is_ollama_transport_error``) for e.g. ``httpcore`` ``ConnectError`` if the daemon is down. Exits with code 1 and prints: `❌ Ollama error: Ensure the Ollama service is running locally.` (no stack trace to stdout). Invalid date ranges still exit 2.
+
+### Added
+- **`temporal_mirror.py`**: Public :class:`TemporalMirror` with ``build_report``; ``run_temporal_mirror`` delegates to it. Forensic section copy clarifies that both range blocks are always present; an empty range notes “no Forensic UUIDs for this range” so the other range’s citations stay intact.
+
+### Added (tests)
+- **`tests/test_temporal_mirror.py`**: ``test_format_report_both_forensic_sections_when_one_range_empty`` asserts two Forensic sections and UUID bullets when one era is empty.
+
+## [0.33.8] - 2026-04-22 (Temporal Mirror — cross-era comparison)
+
+### Added
+- **`temporal_mirror.py`**: Compare two calendar windows in the Chroma vault on a free-text topic. Uses :class:`core.vector_store.VectorStore` semantic search with over-fetch, then filters chunks by `original_timestamp` (or `original_year` as mid-year) into `--range1` and `--range2` (``YYYY`` or ``YYYY-YYYY``). Deduplicates by synapse id, takes top *N* per range, builds **Forensic Receipts** (synapse UUID + chunk id + snippet), and sends the bundle to a **local Ollama** LLM (default `llama3` or `TEMPORAL_MIRROR_LLM`) with the *Temporal Mirror* system prompt: evolutionary changes, direct contradictions, and lost knowledge. Emits a single **Temporal Mirror Report** in Markdown, with optional `-o` file output. No cloud services.
+- **`tests/test_temporal_mirror.py`**: Unit tests for range parsing, timestamp parsing, and range membership.
+
 ## [0.33.7] - 2026-04-22 (Analog Bridge — JSON/LaTeX, atomic commit, recursive scan)
 
 ### Fixed
