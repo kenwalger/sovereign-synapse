@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.7] - 2026-04-22 (Analog Bridge — JSON/LaTeX, atomic commit, recursive scan)
+
+### Fixed
+- **`analog_bridge.py` P1 — `_json_load_loose`**: Replaced naive brace-depth scanning with a **string-aware** scan (`_outer_json_object_slice`) that tracks JSON double-quoted strings and backslash escapes, so `{` and `}` inside string values (e.g. LaTeX `\\frac{a}{b}`) no longer truncate the object before `json.loads`.
+
+### Changed
+- **`analog_bridge.py` P2 — Atomicity**: The durable synapse ``.md`` is written only after a successful vector index. Flow: HITL (if any) → write a **temp** file under the synapse dir → `VectorStore.add_synapse(temp)` → `os.replace` to the final filename. On `FAILED` or any exception, the temp is removed and the final path is not left behind in a half-committed state.
+- **`analog_bridge.py` P2 — Scan**: Image discovery now uses `Path.rglob("*")` (recursive) instead of a single directory level, so subfolders are included; `source_image` frontmatter uses a path **relative to the input root** when possible.
+
+### Added
+- **`tests/test_analog_bridge.py`**: Unit tests for string-aware JSON extraction, fenced JSON, and frontmatter validity with LaTeX in the body.
+
 ## [0.33.6] - 2026-04-22 (Analog Bridge — notebook HTR)
 
 ### Added

@@ -62,7 +62,7 @@ python main.py index
 
 ### 3b. Analog Bridge (handwritten engineering notebooks)
 
-Point the script at a **folder of `.png` or `.jpg` page scans**. It calls the Ollama vision model, writes Sovereign Markdown under `vault/synapses/`, and indexes with the same Chroma path as `main.py index`. Frontmatter includes `source: physical_notebook` and `original_year` for the vector store.
+Point the script at a **root folder** of **`.png` or `.jpg` / `.jpeg`** scans (images in **subfolders** are included). The pipeline: vision model → JSON with optional LaTeX in the transcription → **Sovereign Markdown**; the file under `vault/synapses/` is only finalized **after** a successful `VectorStore` index (write temp → embed → replace). Frontmatter includes `source: physical_notebook` and `original_year` for the vector store.
 
 ```bash
 # Transcribe + index (default vision model: llava)

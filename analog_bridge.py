@@ -24,6 +24,7 @@ import argparse
 import hashlib
 import json
 import logging
+import os
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -121,8 +122,52 @@ def stable_synapse_uuid(image_bytes: bytes) -> str:
     return f"urn:uuid:{u}"
 
 
+def _outer_json_object_slice(s: str, start: int) -> str | None:
+    """Return the slice ``s[start:end+1]`` of the first balanced ``{...}`` object.
+
+    Brace characters inside JSON string values (e.g. LaTeX ``\\frac{a}{b}`` in the
+    ``transcription`` field) are ignored, so they do not affect depth.
+
+    Args:
+        s: The text to scan (usually stripped model output with fences removed).
+        start: Index in ``s`` of the ``{`` that begins the value.
+
+    Returns:
+        The substring for one complete JSON object, or ``None`` if not balanced.
+    """
+    n = len(s)
+    if start >= n or s[start] != "{":
+        return None
+    depth = 0
+    in_string = False
+    string_escape = False
+    for i in range(start, n):
+        ch = s[i]
+        if in_string:
+            if string_escape:
+                string_escape = False
+            elif ch == "\\":
+                string_escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return s[start : i + 1]
+    return None
+
+
 def _json_load_loose(text: str) -> dict[str, Any]:
     """Parse the first JSON object in ``text``, allowing accidental fences/whitespace.
+
+    Extraction is string-aware: ``{``/``}`` that appear *inside* JSON string values
+    (common in LaTeX) do not terminate the outer object, so the full value parses.
 
     Args:
         text: Model output, possibly containing code fences or preamble.
@@ -139,16 +184,10 @@ def _json_load_loose(text: str) -> dict[str, Any]:
     start = s.find("{")
     if start < 0:
         raise ValueError("No JSON object in model output")
-    depth = 0
-    for i, ch in enumerate(s[start:], start):
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                blob = s[start : i + 1]
-                return json.loads(blob)
-    raise ValueError("Unbalanced JSON object in model output")
+    blob = _outer_json_object_slice(s, start)
+    if blob is None:
+        raise ValueError("Unbalanced JSON object in model output")
+    return json.loads(blob)
 
 
 def parse_htr_json(raw: str) -> ParsedHtr:
@@ -426,13 +465,15 @@ def run_analog_ingest(
     human_in_the_loop: bool,
     image_extensions: frozenset[str],
 ) -> None:
-    """Transcribe all images under ``input_dir`` and index into the vector store.
+    """Transcribe all images under ``input_dir`` (recursively) and index into the store.
 
-    Emits one Markdown file per image into ``synapses_dir`` and calls
-    :class:`core.vector_store.VectorStore` to embed into the Chroma vault.
+    For each page: build Sovereign Markdown, optionally HITL, write a **temporary** ``.md``,
+    call :meth:`core.vector_store.VectorStore.add_synapse` on that temp file, then
+    atomically replace the final synapse path only when indexing succeeds. The durable
+    ``.md`` on disk therefore never appears without a matching (or idempotent skip) index.
 
     Args:
-        input_dir: Directory containing ``.png``/``.jpg`` scans.
+        input_dir: Root directory tree to search for ``.png``/``.jpg`` scans.
         synapses_dir: ``vault/synapses`` (or custom) for ``.md`` output.
         chroma_dir: ChromaDB persistence path.
         vision_model: Ollama vision model name.
@@ -441,9 +482,12 @@ def run_analog_ingest(
         image_extensions: Filenames must end with one of these (lowercased, with dot).
     """
     paths = sorted(
-        p
-        for p in input_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in image_extensions
+        (
+            p
+            for p in input_dir.rglob("*")
+            if p.is_file() and p.suffix.lower() in image_extensions
+        ),
+        key=lambda p: str(p),
     )
     if not paths:
         _logger.warning("No %s files under %s", "/".join(sorted(image_extensions)), input_dir)
@@ -451,6 +495,7 @@ def run_analog_ingest(
 
     synapses_dir.mkdir(parents=True, exist_ok=True)
     store = VectorStore(persist_directory=chroma_dir)
+    input_root = input_dir.resolve()
     ok = 0
     index_unchanged = 0
     skip = 0
@@ -470,10 +515,14 @@ def run_analog_ingest(
         parsed = parse_htr_json(raw)
         image_bytes = _read_image_bytes(img)
         h8 = hashlib.sha256(image_bytes).hexdigest()[:8]
+        try:
+            source_display = str(img.resolve().relative_to(input_root))
+        except ValueError:
+            source_display = img.name
         doc = to_sovereign_markdown(
             parsed,
             image_stem=img.stem,
-            source_image_name=img.name,
+            source_image_name=source_display,
             vision_model=vision_model,
             default_year=default_year,
             image_bytes=image_bytes,
@@ -482,27 +531,55 @@ def run_analog_ingest(
         out_path = synapses_dir / out_name
 
         if human_in_the_loop and not _hitl_pause(doc):
-            _logger.info("Operator skipped: %s", img.name)
+            _logger.info("Operator skipped: %s", img)
             skip += 1
             continue
 
-        out_path.write_text(doc, encoding="utf-8")
-        _logger.info("Wrote %s", out_path)
-
+        tmp_path = synapses_dir / f".analog-tmp-{h8}-{os.getpid()}.md"
         try:
-            status, _ = store.add_synapse(str(out_path))
-        except Exception as e:
-            _logger.error("Index failed for %s: %s", out_path, e)
+            tmp_path.write_text(doc, encoding="utf-8")
+        except OSError as e:
+            _logger.error("Temp write failed for %s: %s", img, e)
             err += 1
             continue
+
+        try:
+            status, _ = store.add_synapse(str(tmp_path))
+        except Exception as e:
+            _logger.error("Index failed for %s: %s", img, e)
+            err += 1
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                _logger.debug("Could not remove temp %s", tmp_path)
+            continue
+
+        if status == "FAILED":
+            _logger.warning("Embedding failed for %s; not committing final .md", img)
+            err += 1
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                _logger.debug("Could not remove temp %s", tmp_path)
+            continue
+
+        try:
+            os.replace(tmp_path, out_path)
+        except OSError as e:
+            _logger.error("Could not commit %s -> %s: %s", tmp_path, out_path, e)
+            err += 1
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            continue
+
         if status == "SUCCESS":
             ok += 1
-        elif status == "SKIPPED":
+        else:
             index_unchanged += 1
             _logger.info("Chroma: unchanged hash, skipped: %s", out_name)
-        else:
-            _logger.warning("Chroma: status=%s for %s", status, out_name)
-            err += 1
+        _logger.info("Committed synapse at %s", out_path)
 
     print(
         f"✅ Analog Bridge complete. Newly indexed: {ok}, "
@@ -521,7 +598,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument(
         "input_dir",
         type=Path,
-        help="Directory containing .png / .jpg scans",
+        help="Root directory; .png / .jpg / .jpeg files are found recursively (subfolders included)",
     )
     p.add_argument(
         "--synapses-dir",
