@@ -22,6 +22,7 @@ Sovereign Synapse is a local-first engine designed to aggregate fragmented intel
 - **`adapters/`** — Translation layers (Reference: `openai_adapter.py`)
 - **`analog_bridge.py`** — Ingest scans of **handwritten** engineering notebooks (Ollama vision HTR → Sovereign Markdown → Chroma index)
 - **`temporal_mirror.py`** — Compare two **time ranges** in the vault on a topic (Chroma + local Ollama; Markdown report with synapse “forensic” citations)
+- **`unbroken_voice.py`** — Build **Sovereign_Persona.json** (Reasoning Fingerprint + legacy system prompt) from the most reflective synapses, using Ollama only
 - **`core/`** — The engine: `context_cleaner.py` and `vector_store.py`
 - **`mcp_server/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
 - **`vault/synapses/`** — Turn-based Markdown files (The Source of Truth)
@@ -96,6 +97,20 @@ If the mirror fails with `❌ Ollama error: Ensure the Ollama service is running
 
 For scripting, use `TemporalMirror(chroma_dir=..., llm_model=...).build_report(...)`; the CLI wraps the same class.
 
+### 3d. Unbroken Voice (Legacy Persona & Synapse Navigator)
+
+After the vault is **indexed**, generate **Sovereign_Persona.json** — a durable **Reasoning Fingerprint** (metaphors, values, technical standards, characteristic phrases) and a **legacy system prompt** derived from the ~50 most *reflective* synapses (semantic match to a fixed “self-authorship” probe; optional `context_score` in frontmatter reduces boilerplate weight). This is the **Unbroken Voice**: a stable persona for future local interrogation.
+
+```bash
+# Build vault/Sovereign_Persona.json (default: top 50 synapses, local Ollama only)
+python unbroken_voice.py
+
+# Custom output path and model
+python unbroken_voice.py -o vault/Sovereign_Persona.json --llm mistral -n 50
+```
+
+The MCP tool **`query_legacy_persona`** loads that JSON, pulls **Forensic Receipts** from Chroma for the user’s question, and answers *as* you in your voice, citing `synapse_id` lines. For **read-only** deployment (e.g. shared “Legacy” interrogation), start the server with `SYNAPSE_MCP_READ_ONLY=1` or `SYNAPSE_LEGACY_MODE=1` so the Chroma collection cannot be mutated through the client API.
+
 ### 4. Search your History
 
 ```python
@@ -122,6 +137,8 @@ for result in results:
 | `search_synapses` | Semantic search — returns top N unique-file matches with snippet + metadata |
 | `get_recent_context` | Working memory — last N synapses sorted by timestamp |
 | `reflect_on_memories` | Reflection — sends snippets (capped: 10 / 15 000 chars) to a local Ollama LLM to surface 3 strategic themes |
+| `query_legacy_persona` | **Unbroken Voice** — answer *as* the author using `Sovereign_Persona.json` and Forensic Receipts (local Ollama); requires a prior `unbroken_voice.py` run |
+| `get_vault_policy` | Read-only / Legacy policy JSON (`chroma_mutation_forbidden`, `VAULT_READ_ONLY` / `PermissionError` on mutations) |
 
 ### Environment Variables
 
@@ -131,6 +148,9 @@ for result in results:
 | `SYNAPSE_COLLECTION` | `synapses` | ChromaDB collection name |
 | `SYNAPSE_EMBED_MODEL` | `mxbai-embed-large` | Ollama embedding model |
 | `SYNAPSE_REFLECT_LLM` | `llama3` | Ollama chat model for `reflect_on_memories` |
+| `SYNAPSE_PERSONA_PATH` | `vault/Sovereign_Persona.json` (under project root) | File produced by `unbroken_voice.py` for `query_legacy_persona` |
+| `SYNAPSE_LEGACY_PERSONA_LLM` | falls back to `SYNAPSE_REFLECT_LLM` / `llama3` | Ollama model for the legacy persona reply |
+| `SYNAPSE_MCP_READ_ONLY` / `SYNAPSE_LEGACY_MODE` | unset | If `1` / `true` / `yes`, Chroma `add`/`delete`/… are disabled (read-only vault for hosted interrogation) |
 
 ### Running the server
 
