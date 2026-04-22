@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.34.0] - 2026-04-22 (Unbroken Voice — Legacy Persona, MCP, read-only vault)
+
+### Added
+- **`unbroken_voice.py`**: Build **Sovereign_Persona.json** in the vault (default `vault/Sovereign_Persona.json`). Selects the top 50 (configurable) **thematically reflective** synapses by semantic search against a fixed *reflective* probe, with optional **context_score** down-rank for boilerplate; calls a local Ollama model to produce **Reasoning Fingerprint** fields (metaphors, core values, technical standards, characteristic phrases) and a long **legacy_system_prompt** for the “Synapse Navigator.” No cloud.
+- **`mcp_server/server.py` — `query_legacy_persona`**: MCP tool that loads the persona file, semantically retrieves **Forensic Receipts** (synapse_id, chunk_id, snippets), and answers the user’s question *as* the author via local Ollama, requiring grounded citations. Env: `SYNAPSE_PERSONA_PATH`, `SYNAPSE_LEGACY_PERSONA_LLM` (default: same family as `SYNAPSE_REFLECT_LLM` / `llama3`).
+- **Read-only / Legacy Mode**: `SYNAPSE_MCP_READ_ONLY=1` and/or `SYNAPSE_LEGACY_MODE=1` wraps the Chroma collection in **`_ReadOnlyCollection`** — `add` / `update` / `delete` / `upsert` / `modify` raise `RuntimeError` so hosted interrogation cannot mutate the index. **Shared** `_semantic_search_results` powers `search_synapses` and the legacy tool.
+- **`tests/test_unbroken_voice.py`**, **tests/test_mcp_server.py**: tests for JSON parse, read-only guard, and `query_legacy_persona` (mocked Ollama/embed).
+
 ## [0.33.9] - 2026-04-22 (Temporal Mirror — Ollama errors, class API, docstrings)
 
 ### Fixed

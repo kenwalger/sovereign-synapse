@@ -20,7 +20,9 @@ import mcp_server.server as srv
 from mcp_server.server import (
     REFLECT_MAX_CHARS,
     REFLECT_MAX_SNIPPETS,
+    _ReadOnlyCollection,
     get_recent_context,
+    query_legacy_persona,
     reflect_on_memories,
     search_synapses,
 )
@@ -473,3 +475,72 @@ def test_reflect_on_memories_focus_parameter_included_in_call():
     assert focus_text in captured_prompt[0], (
         "Focus text must appear in the prompt sent to Ollama"
     )
+
+
+# ---------------------------------------------------------------------------
+# Read-only collection (Legacy Mode)
+# ---------------------------------------------------------------------------
+
+
+def test_read_only_collection_blocks_mutation():
+    """Chroma mutators on the wrapper must raise (no writes in Legacy Mode)."""
+    inner = MagicMock()
+    ro = _ReadOnlyCollection(inner)
+    for name in ("add", "delete", "update", "upsert", "modify"):
+        fn = getattr(ro, name)
+        with pytest.raises(RuntimeError) as ex:
+            fn()
+        assert "read-only" in str(ex.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# query_legacy_persona
+# ---------------------------------------------------------------------------
+
+
+def test_query_legacy_persona_requires_persona_file(tmp_path, monkeypatch):
+    """Without Sovereign_Persona.json, return a structured error."""
+    monkeypatch.setattr(srv, "PERSONA_PATH", str(tmp_path / "missing.json"))
+    raw = query_legacy_persona("What do I think about sensors?")
+    data = json.loads(raw)
+    assert "error" in data
+    assert "not found" in data["error"]
+
+
+def test_query_legacy_persona_happy_path(tmp_path, monkeypatch):
+    """With persona + mocked Chroma + Ollama, return answer and forensic_receipts."""
+    p = tmp_path / "Sovereign_Persona.json"
+    p.write_text(
+        json.dumps(
+            {
+                "id": "urn:uuid:11111111-1111-1111-1111-111111111111",
+                "legacy_system_prompt": "You are the test author. Cite synapse_id.",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(srv, "PERSONA_PATH", str(p))
+
+    col = _make_collection_mock()
+    monkeypatch.setattr(srv, "_get_collection", lambda: col)
+    monkeypatch.setattr(
+        srv,
+        "_embed",
+        lambda _q: [0.0] * 8,
+    )
+
+    def fake_chat(model, messages, **kwargs):
+        return SimpleNamespace(
+            message=SimpleNamespace(
+                content="I would test with sensors (synapse test aaaa0001...).",
+            )
+        )
+
+    with patch("mcp_server.server.ollama.chat", side_effect=fake_chat):
+        raw = query_legacy_persona("sensor setup", n_evidence=2)
+
+    data = json.loads(raw)
+    assert "error" not in data
+    assert "answer" in data
+    assert data["forensic_receipts"]
+    assert data["forensic_receipts"][0]["synapse_id"]
