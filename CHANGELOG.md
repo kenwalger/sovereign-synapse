@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.33.6] - 2026-04-22 (Analog Bridge — notebook HTR)
+
+### Added
+- **`analog_bridge.py`**: Ingests a directory of `.png`/`.jpg` engineering notebook scans. Calls a local **Ollama** vision model (`llava` by default, e.g. `llama3.2-vision`) with an **Engineering Notebook HTR** system prompt that preserves dates, diagram descriptions, math (LaTeX), **Keywords**, and **Temporal Markers** (JSON in the model reply, then converted to Sovereign Markdown with `source: physical_notebook` and `original_year`). Indexes each file with :class:`core.vector_store.VectorStore` (Chroma + `mxbai-embed-large` embeddings) so metadata includes `source` and `original_year` for the vault. **`--hitl`**: human-in-the-loop — prints each transcription and waits for Enter to write and index, or `s` to skip (for verifying equations before indexing).
+- **README.md**: "Analog Bridge" section — prerequisites, example CLI, and pointer to the vision model.
+
+### Note
+- Pull a vision model once, e.g. `ollama pull llava` (or your chosen `llava` / `llama3.2-vision`).
+
 ## [0.33.5] - 2026-03-18 (Test suite — drop pytest-asyncio)
 
 ### Fixed
