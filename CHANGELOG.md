@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.35.0] - 2026-05-15 (Fiscal Architecture — Prose Tax, Forensic Receipts, Typed Retrieval)
+
+### Added
+- **`core/context_cleaner.ContextCleaner.distill_signal`**: Heuristic stripping of conversational boilerplate (“Prose Tax”) while preserving code blocks and structural lines; optional Ollama pass via `SYNAPSE_DISTILL_USE_OLLAMA` and `SYNAPSE_DISTILL_LLM`.
+- **`ContextCleaner.is_clean`** (static): Returns `True` when no preamble or postamble prose tax is detected.
+- **`schemas/synapse_manifest.json`**: JSON Schema for Sovereign Asset frontmatter and MCP Structural Contract shape (`receipt_id`, `forensic_receipt`, `structural_signal`).
+- **MCP `search_synapses`**: Returns **Structural Contracts** (`metadata` with `prose_tax_redacted` and `forensic_receipt`, plus `distilled_signal` and `receipt_id`) instead of raw snippets; response includes `contract_schema` pointer.
+
+### Changed
+- **`adapters/openai_adapter`**: Deterministic `receipt_id` via SHA-256 of user text, timestamp, and source; **`uuid` in frontmatter is now the `receipt_id`** (primary Forensic Trace anchor). Frontmatter also includes `forensic_receipt`, `forensic_integrity`, `prose_tax_redacted`, and `structural_signal`.
+- **`core/vector_store._extract_uuid`**: Normalizes `urn:synapse:receipt:` IDs for Chroma document keys.
+- **`mcp_server/server.py`**: `_structural_contract` exposes `metadata` / `provenance` with `prose_tax_redacted` and `forensic_receipt`; `get_recent_context` still uses snippet format for working memory.
+
+### Note
+- Re-index the vault after upgrading frontmatter so Chroma metadata carries `receipt_id`, `forensic_receipt`, and `structural_signal`.
+
 ## [0.34.1] - 2026-04-22 (Unbroken Voice + MCP P2: errors, n_results log, read-only policy)
 
 ### Fixed

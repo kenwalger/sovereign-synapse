@@ -115,7 +115,7 @@ def cmd_index(args: argparse.Namespace) -> None:
             status, doc_id = store.add_synapse(str(path))
         except Exception as e:
             failed += 1
-            print(f"⚠️ Skipped {path.name}: {e}")
+            print(f"⚠️ Failed {path.name}: {e}")
             continue
 
         if status == "SUCCESS":

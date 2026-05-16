@@ -17,6 +17,8 @@ from chromadb.config import Settings
 import frontmatter
 import ollama
 
+from core.ollama_embed import embed_text
+
 # Default embedding model for local inference
 EMBEDDING_MODEL = "mxbai-embed-large"
 
@@ -97,7 +99,9 @@ def _extract_uuid(metadata: dict[str, Any]) -> str:
         return ""
     if not isinstance(uuid_val, str):
         return str(uuid_val)
-    # Normalize URN form to a short ID
+    # Normalize URN forms to a short ID for Chroma document keys
+    if uuid_val.startswith("urn:synapse:receipt:"):
+        return uuid_val.replace("urn:synapse:receipt:", "")
     if uuid_val.startswith("urn:uuid:"):
         return uuid_val.replace("urn:uuid:", "")
     return uuid_val
@@ -152,11 +156,7 @@ class VectorStore:
                 _logger.warning("Query string truncated to %d chars for embedding", CHUNK_SIZE)
             else:
                 _logger.debug("Text truncated to %d chars for embedding", CHUNK_SIZE)
-        response = ollama.embed(model=self._embedding_model, input=text)
-        embeddings = response.embeddings if response.embeddings else []
-        if not embeddings:
-            return []
-        return list(embeddings[0])
+        return embed_text(self._embedding_model, text)
 
     def _embed_with_retry(
         self, chunk: str, chunk_idx: int, file_path: str

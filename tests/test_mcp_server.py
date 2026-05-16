@@ -269,6 +269,45 @@ def test_search_synapses_best_chunk_wins():
     assert first_result["distance"] == 0.05
 
 
+def test_search_synapses_returns_structural_contract():
+    """search_synapses must return Structural Contracts, not raw snippets."""
+    col = _make_collection_mock()
+    col.query.return_value["metadatas"] = [[
+        {
+            **_SYNAPSE_METAS[1],
+            "uuid": "urn:synapse:receipt:abc123",
+            "receipt_id": "urn:synapse:receipt:abc123",
+            "forensic_receipt": "1.0",
+            "forensic_integrity": "1.0",
+            "prose_tax_redacted": True,
+            "structural_signal": "BLE accelerometer setup.",
+        },
+        _SYNAPSE_METAS[1],
+        _SYNAPSE_METAS[3],
+        _SYNAPSE_METAS[0],
+        _SYNAPSE_METAS[4],
+    ]]
+    fake_embed = [0.1] * 1024
+
+    with (
+        patch("mcp_server.server._get_collection", return_value=col),
+        patch("mcp_server.server._embed", return_value=fake_embed),
+    ):
+        raw = search_synapses(query="wearable", n_results=3)
+
+    data = json.loads(raw)
+    assert data["contract_schema"] == "schemas/synapse_manifest.json"
+    first = data["results"][0]
+    assert first["contract_type"] == "sovereign_structural_contract"
+    assert first["receipt_id"] == "urn:synapse:receipt:abc123"
+    assert "distilled_signal" in first
+    assert "snippet" not in first
+    assert first["distilled_signal"] == "BLE accelerometer setup."
+    assert first["metadata"]["forensic_receipt"] == "1.0"
+    assert first["metadata"]["prose_tax_redacted"] is True
+    assert first["provenance"]["forensic_receipt"] == "1.0"
+
+
 def test_search_synapses_n_results_upper_bound():
     """n_results > 50 must be silently clamped; no error raised."""
     col = _make_collection_mock()

@@ -1,9 +1,14 @@
 # 🏛️ Sovereign Synapse
 ### Subtitle: Building a Local-First Cognitive Estate
 
-Sovereign Synapse is a local-first engine designed to aggregate fragmented intellectual history—starting with LLM chats—into a unified, searchable "Synapse" vault. 
+Sovereign Synapse is an infrastructure-first engine designed to aggregate fragmented intellectual history—starting with LLM chats—into a unified, searchable "Synapse" vault. 
 
 > **Note:** This project currently uses OpenAI as its reference implementation. It is designed as a modular blueprint; we welcome community contributions for additional adapters (Claude, Gemini, etc.) that follow our Sovereign principles.
+
+## Core Philosophy: Fiscal Architecture
+1. **Infrastructure Integrity:** All data remains on local silicon, moving from "Privacy as a Choice" to "Privacy as a Financial Strategy."
+2. **Prose Tax Elimination:** We strip conversational boilerplate at ingestion to reduce the "Reasoning Tax" on downstream inference. `ContextCleaner.is_clean()` flags turns with preamble/postamble; ingested synapses record `prose_tax_redacted` in frontmatter.
+3. **Forensic Traceability:** Every turn is anchored by a deterministic **`receipt_id`** (`urn:synapse:receipt:…`), which is also the primary **`uuid`** in Markdown frontmatter. MCP `search_synapses` returns Structural Contracts including `forensic_receipt`, `prose_tax_redacted`, and `distilled_signal` (see `schemas/synapse_manifest.json`).
 
 ## The Sovereign Principles
 1. **Zero Cloud Leakage:** All data processing, embedding, and retrieval occurs on local silicon.
@@ -23,7 +28,8 @@ Sovereign Synapse is a local-first engine designed to aggregate fragmented intel
 - **`analog_bridge.py`** — Ingest scans of **handwritten** engineering notebooks (Ollama vision HTR → Sovereign Markdown → Chroma index)
 - **`temporal_mirror.py`** — Compare two **time ranges** in the vault on a topic (Chroma + local Ollama; Markdown report with synapse “forensic” citations)
 - **`unbroken_voice.py`** — Build **Sovereign_Persona.json** (Reasoning Fingerprint + legacy system prompt) from the most reflective synapses, using Ollama only
-- **`core/`** — The engine: `context_cleaner.py` and `vector_store.py`
+- **`core/`** — The engine: `context_cleaner.py` (prose-tax detection + `distill_signal`) and `vector_store.py`
+- **`schemas/`** — `synapse_manifest.json` (typed Sovereign Asset / Structural Contract schema for agents)
 - **`mcp_server/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
 - **`vault/synapses/`** — Turn-based Markdown files (The Source of Truth)
 - **`vault/chroma/`** — Local vector persistence for semantic search

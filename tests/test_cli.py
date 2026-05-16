@@ -151,7 +151,7 @@ Test response.
     chroma_dir = str(tmp_path / "chroma")
     args = argparse.Namespace(synapses_dir=str(synapse_dir), chroma_dir=chroma_dir)
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = SimpleNamespace(embeddings=[])
         cmd_index(args)
 
@@ -193,7 +193,7 @@ The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
 
         cmd_index(argparse.Namespace(synapses_dir=str(synapse_dir), chroma_dir=chroma_dir))
@@ -271,7 +271,7 @@ B response.
         {"id": "bbbb2222-cccc-3333-dddd-4444eeee5555#chunk-1", "document": "B chunk 2", "metadata": {}, "distance": 0.4},
     ]
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = SimpleNamespace(embeddings=[[0.1] * 1024])
 
         with patch.object(VectorStore, "query", return_value=mock_results):

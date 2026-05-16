@@ -75,7 +75,7 @@ def test_add_synapse_parses_file_and_calls_embedding(
     fake_embedding = [0.1] * 1024  # mxbai-embed-large uses 1024-dim vectors
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
@@ -122,7 +122,7 @@ Test response.
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
@@ -170,15 +170,21 @@ def test_write_turn_generates_unique_uuids_for_same_message_different_timestamps
     md_files = sorted(tmp_path.glob("*.md"))
     assert len(md_files) == 2
 
-    uuid_pattern = re.compile(r"uuid: urn:uuid:([a-f0-9-]{36})")
-    uuids = []
+    receipt_pattern = re.compile(r"uuid: (urn:synapse:receipt:[a-f0-9]{64})")
+    receipt_ids = []
     for path in md_files:
         content = path.read_text(encoding="utf-8")
-        match = uuid_pattern.search(content)
-        assert match, f"No uuid found in {path}"
-        uuids.append(match.group(1))
+        match = receipt_pattern.search(content)
+        assert match, f"No forensic receipt uuid found in {path}"
+        receipt_ids.append(match.group(1))
 
-    assert uuids[0] != uuids[1], "Identical messages with different timestamps must have distinct UUIDs"
+    assert receipt_ids[0] != receipt_ids[1], (
+        "Identical messages with different timestamps must have distinct receipt_ids"
+    )
+    for path, rid in zip(md_files, receipt_ids):
+        content = path.read_text(encoding="utf-8")
+        assert f"receipt_id: {rid}" in content
+        assert content.count(f"uuid: {rid}") == 1
 
 
 def test_add_synapse_handles_horizontal_rule_in_body(
@@ -215,7 +221,7 @@ And more text after it.
     fake_embedding = [0.2] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
@@ -558,7 +564,7 @@ def test_add_synapse_returns_skipped_when_content_unchanged(
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         store = VectorStore(persist_directory=temp_persist_dir)
         status1, doc_id1 = store.add_synapse(str(synapse_path))
@@ -597,7 +603,7 @@ Long question.
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         store = VectorStore(persist_directory=temp_persist_dir)
         status1, doc_id = store.add_synapse(str(synapse_path))
@@ -613,7 +619,7 @@ Long question.
     assert len([i for i in ids_after_delete if doc_id in i]) == len(chunk_ids) - 1
 
     # Re-add: should trigger full re-index (chunk count mismatch)
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         status2, _ = store.add_synapse(str(synapse_path))
 
@@ -636,7 +642,7 @@ def test_delete_failure_aborts_upsert(
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         store = VectorStore(persist_directory=temp_persist_dir)
         with patch.object(
@@ -664,7 +670,7 @@ def test_reindex_on_hash_mismatch(
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         store = VectorStore(persist_directory=temp_persist_dir)
         status1, doc_id = store.add_synapse(str(synapse_path))
@@ -678,7 +684,7 @@ def test_reindex_on_hash_mismatch(
         status2, _ = store.add_synapse(str(synapse_path))
 
     assert status2 == "SUCCESS"
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         results = store.query("Garmin Fenix raw sensor", n_results=3)
     assert any("Garmin" in (r.get("document") or "") for r in results)
@@ -693,7 +699,7 @@ def test_add_synapse_returns_failed_when_embedding_empty(
     synapse_path = tmp_path / "synapse.md"
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = SimpleNamespace(embeddings=[])
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
@@ -725,7 +731,7 @@ Long question.
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
@@ -770,7 +776,7 @@ Long question.
             return SimpleNamespace(embeddings=[])  # fail second chunk
         return SimpleNamespace(embeddings=[[0.1] * 1024])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.side_effect = mock_embed_side_effect
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
@@ -794,7 +800,7 @@ def test_vector_store_query_empty_collection_returns_empty_list(
     Args:
         temp_persist_dir: Temporary ChromaDB persistence path.
     """
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = SimpleNamespace(embeddings=[[0.1] * 1024])
 
         store = VectorStore(persist_directory=temp_persist_dir)
@@ -822,7 +828,7 @@ def test_vector_store_query_returns_top_matches(
     fake_embedding = [0.1] * 1024
     mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.return_value = mock_response
 
         store = VectorStore(persist_directory=temp_persist_dir)
@@ -861,7 +867,7 @@ def test_query_returns_empty_on_embedding_failure(
             return mock_response  # add_synapse
         raise ollama.ResponseError("Connection refused", 500)  # query
 
-    with patch("core.vector_store.ollama.embed") as mock_embed:
+    with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.side_effect = embed_side_effect
 
         store = VectorStore(persist_directory=temp_persist_dir)

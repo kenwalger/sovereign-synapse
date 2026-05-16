@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sovereign-synapse.local/schemas/synapse_manifest.json",
+  "title": "Sovereign Asset (Synapse Turn)",
+  "description": "Expected structure for a turn-based Sovereign Synapse asset and MCP Structural Contract retrieval.",
+  "type": "object",
+  "required": [
+    "uuid",
+    "receipt_id",
+    "forensic_integrity",
+    "source",
+    "model",
+    "original_timestamp",
+    "structural_signal"
+  ],
+  "properties": {
+    "uuid": {
+      "type": "string",
+      "description": "Primary forensic trace identifier (same value as receipt_id).",
+      "pattern": "^urn:synapse:receipt:"
+    },
+    "forensic_receipt": {
+      "type": "string",
+      "description": "Integrity schema version for the forensic anchor (e.g. 1.0)."
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^urn:synapse:receipt:",
+      "description": "Deterministic forensic receipt for provenance."
+    },
+    "forensic_integrity": {
+      "type": "string",
+      "description": "Integrity schema version (e.g. 1.0)."
+    },
+    "prose_tax_redacted": {
+      "type": "boolean",
+      "description": "True when conversational boilerplate was detected or distilled away."
+    },
+    "structural_signal": {
+      "type": "string",
+      "description": "Distilled content: code, logic, and facts without prose tax."
+    },
+    "source": {
+      "type": "string",
+      "description": "Ingestion source (e.g. gpt_export, physical_notebook)."
+    },
+    "model": {
+      "type": "string",
+      "description": "Model slug used for the assistant turn."
+    },
+    "original_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO-8601 timestamp of the original turn."
+    },
+    "original_convo_id": {
+      "type": "string",
+      "description": "Source conversation identifier."
+    },
+    "preamble": { "type": "boolean" },
+    "postamble": { "type": "boolean" },
+    "body": {
+      "type": "string",
+      "description": "Full markdown body (User + Assistant sections)."
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "structural_contract": {
+      "type": "object",
+      "description": "MCP search_synapses result item.",
+      "required": ["contract_type", "receipt_id", "synapse_id", "distilled_signal", "provenance"],
+      "properties": {
+        "contract_type": {
+          "const": "sovereign_structural_contract"
+        },
+        "receipt_id": {
+          "type": "string",
+          "pattern": "^urn:synapse:receipt:"
+        },
+        "synapse_id": { "type": "string" },
+        "chunk_id": { "type": "string" },
+        "distilled_signal": { "type": "string" },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "model": { "type": "string" },
+            "original_timestamp": { "type": "string" },
+            "forensic_integrity": { "type": "string" },
+            "prose_tax_redacted": {},
+            "uuid": { "type": "string" }
+          }
+        },
+        "distance": { "type": ["number", "null"] }
+      }
+    }
+  }
+}

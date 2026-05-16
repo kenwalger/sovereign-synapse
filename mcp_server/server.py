@@ -42,6 +42,9 @@ import ollama
 from chromadb.config import Settings
 from mcp.server.fastmcp import FastMCP
 
+from core.context_cleaner import ContextCleaner
+from core.ollama_embed import embed_text
+
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
@@ -98,11 +101,13 @@ _collection: Any | None = None
 def _embed(text: str) -> list[float]:
     """Embed text using the configured Ollama model."""
     text = text[:CHUNK_SIZE]
-    response = ollama.embed(model=EMBEDDING_MODEL, input=text)
-    embeddings = getattr(response, "embeddings", None) or []
-    if not embeddings:
+    try:
+        vector = embed_text(EMBEDDING_MODEL, text)
+    except AttributeError as e:
+        raise RuntimeError(str(e)) from e
+    if not vector:
         raise RuntimeError(f"Ollama returned no embeddings for model '{EMBEDDING_MODEL}'")
-    return list(embeddings[0])
+    return vector
 
 
 def _format_hit(
@@ -111,7 +116,7 @@ def _format_hit(
     metadata: dict[str, Any],
     distance: float | None,
 ) -> dict[str, Any]:
-    """Convert a raw ChromaDB hit to a clean dict for MCP response."""
+    """Convert a raw ChromaDB hit to a clean dict for MCP response (working memory)."""
     base_uuid = doc_id.split("#")[0]
     return {
         "synapse_id": base_uuid,
@@ -120,6 +125,68 @@ def _format_hit(
         "timestamp": str(metadata.get("original_timestamp", "")),
         "model": str(metadata.get("model", "")),
         "source": str(metadata.get("source", "")),
+        "distance": round(distance, 4) if distance is not None else None,
+    }
+
+
+def _coerce_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.lower() in ("true", "1", "yes")
+    return bool(value)
+
+
+def _forensic_receipt_from_metadata(metadata: dict[str, Any]) -> str:
+    return str(
+        metadata.get("forensic_receipt")
+        or metadata.get("forensic_integrity")
+        or "",
+    )
+
+
+def _prose_tax_redacted_from_metadata(metadata: dict[str, Any], body: str) -> bool:
+    raw = metadata.get("prose_tax_redacted")
+    if raw is not None:
+        return _coerce_bool(raw)
+    return not ContextCleaner.is_clean(body)
+
+
+def _structural_contract(
+    doc_id: str,
+    document: str,
+    metadata: dict[str, Any],
+    distance: float | None,
+) -> dict[str, Any]:
+    """Typed retrieval payload: metadata + distilled signal + forensic receipt_id."""
+    base_uuid = doc_id.split("#")[0]
+    body = document or ""
+    stored_signal = metadata.get("structural_signal")
+    if isinstance(stored_signal, str) and stored_signal.strip():
+        distilled = stored_signal.strip()
+    else:
+        distilled = ContextCleaner.distill_signal(body)
+    receipt_id = str(metadata.get("receipt_id") or metadata.get("uuid") or "")
+    forensic_receipt = _forensic_receipt_from_metadata(metadata)
+    prose_tax_redacted = _prose_tax_redacted_from_metadata(metadata, body)
+    asset_metadata = {
+        "uuid": str(metadata.get("uuid", receipt_id)),
+        "receipt_id": receipt_id,
+        "forensic_receipt": forensic_receipt,
+        "prose_tax_redacted": prose_tax_redacted,
+        "source": str(metadata.get("source", "")),
+        "model": str(metadata.get("model", "")),
+        "original_timestamp": str(metadata.get("original_timestamp", "")),
+        "forensic_integrity": str(metadata.get("forensic_integrity", forensic_receipt)),
+    }
+    return {
+        "contract_type": "sovereign_structural_contract",
+        "receipt_id": receipt_id,
+        "synapse_id": base_uuid,
+        "chunk_id": doc_id,
+        "metadata": asset_metadata,
+        "provenance": asset_metadata,
+        "distilled_signal": distilled[:2000] if distilled else "",
         "distance": round(distance, 4) if distance is not None else None,
     }
 
@@ -163,6 +230,8 @@ def _semantic_search_results(
     collection: Any,
     query: str,
     n_results: int,
+    *,
+    structural_contract: bool = False,
 ) -> list[dict[str, Any]] | str:
     """Chroma query + unique-file cap; return result dicts or an error string for JSON."""
     requested = n_results
@@ -195,12 +264,13 @@ def _semantic_search_results(
     dists = raw.get("distances", [[]])[0]
     seen: set[str] = set()
     results: list[dict[str, Any]] = []
+    formatter = _structural_contract if structural_contract else _format_hit
     for doc_id, doc, meta, dist in zip(hit_ids, docs, metas, dists):
         base = doc_id.split("#")[0]
         if base in seen:
             continue
         seen.add(base)
-        results.append(_format_hit(doc_id, doc, meta, dist))
+        results.append(formatter(doc_id, doc, meta or {}, dist))
         if len(results) >= n_results:
             break
     return results
@@ -281,14 +351,17 @@ def get_vault_policy() -> str:
 
 @mcp.tool()
 def search_synapses(query: str, n_results: int = 5) -> str:
-    """Search the Synapse vault for semantically relevant memories.
+    """Search the Synapse vault for semantically relevant Structural Contracts.
+
+    Each result is a typed payload (metadata + distilled_signal + receipt_id)
+    per schemas/synapse_manifest.json — not raw conversational prose.
 
     Args:
         query:     Natural language search query.
         n_results: Number of unique-file results to return (default 5, max 50).
 
     Returns:
-        JSON array of matching snippets with metadata and similarity distance.
+        JSON with Structural Contract results and similarity distance.
     """
     if not query.strip():
         return json.dumps({"error": "query must not be empty"})
@@ -302,7 +375,9 @@ def search_synapses(query: str, n_results: int = 5) -> str:
     except Exception as e:
         return json.dumps({"error": f"ChromaDB unavailable: {e}"})
 
-    sr = _semantic_search_results(collection, query, n_results)
+    sr = _semantic_search_results(
+        collection, query, n_results, structural_contract=True
+    )
     if isinstance(sr, str):
         if sr == "empty":
             return json.dumps(
@@ -315,7 +390,13 @@ def search_synapses(query: str, n_results: int = 5) -> str:
         return json.dumps({"error": str(sr)})
 
     return json.dumps(
-        {"results": sr, "query": query, "returned": len(sr)}, indent=2
+        {
+            "results": sr,
+            "query": query,
+            "returned": len(sr),
+            "contract_schema": "schemas/synapse_manifest.json",
+        },
+        indent=2,
     )
 
 
@@ -549,6 +630,7 @@ def query_legacy_persona(query: str, n_evidence: int = 8) -> str:
                 "chunk_id": r.get("chunk_id", ""),
                 "snippet_excerpt": sn,
                 "original_timestamp": r.get("timestamp", ""),
+                "receipt_id": "",
             }
         )
 

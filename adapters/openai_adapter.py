@@ -6,8 +6,6 @@ import hashlib
 import json
 import logging
 import os
-import uuid
-
 from datetime import datetime, timezone
 from typing import Any, Literal
 
@@ -170,6 +168,25 @@ class OpenAIAdapter(BaseAdapter):
 
         return stats
 
+    def generate_forensic_receipt(
+        self,
+        user_text: str,
+        timestamp: datetime,
+        source: str = "openai",
+    ) -> dict[str, str | bool]:
+        """Create a deterministic forensic anchor (receipt_id) for provenance."""
+        seed = f"{user_text}|{timestamp.isoformat()}|{source}"
+        receipt_hash = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+        integrity = "1.0"
+        receipt_id = f"urn:synapse:receipt:{receipt_hash}"
+        return {
+            "receipt_id": receipt_id,
+            "forensic_receipt": integrity,
+            "provenance": source,
+            "integrity_version": integrity,
+            "audit_ready": True,
+        }
+
     def write_turn(
         self,
         user_text: str,
@@ -198,18 +215,26 @@ class OpenAIAdapter(BaseAdapter):
 
         has_preamble = ContextCleaner.is_preamble(assistant_text)
         has_postamble = ContextCleaner.is_postamble(assistant_text)
+        structural_signal = ContextCleaner.distill_signal(assistant_text)
+        prose_tax_redacted = not ContextCleaner.is_clean(assistant_text) or (
+            structural_signal.strip() != assistant_text.strip()
+        )
 
-        # Create a unique but repeatable ID based on conversation, timestamp, and question
-        seed = f"{original_convo_id}-{timestamp.isoformat()}-{user_text}"
-        unique_id = uuid.uuid5(uuid.NAMESPACE_URL, seed)
+        receipt = self.generate_forensic_receipt(user_text, timestamp, "openai")
+        receipt_id = receipt["receipt_id"]
 
         os.makedirs(self.output_path, exist_ok=True)
 
         metadata = {
-            "uuid": f"urn:uuid:{unique_id}",
+            "uuid": receipt_id,
+            "receipt_id": receipt_id,
+            "forensic_receipt": receipt["forensic_receipt"],
+            "forensic_integrity": receipt["integrity_version"],
             "source": "gpt_export",
             "model": model,
             "original_timestamp": timestamp.isoformat(),
+            "prose_tax_redacted": prose_tax_redacted,
+            "structural_signal": structural_signal,
             "original_convo_id": original_convo_id,
             "preamble": has_preamble,
             "postamble": has_postamble,
