@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.35.1] - 2026-05-16 (Tests — embed_text mocks & CLI subprocess)
+
+### Fixed (tests)
+- **`tests/test_vector_store.py`**, **`tests/test_cli.py`**: Mocks for `core.vector_store.embed_text` now return **`list[float]`** (or **`[]`** for failure paths), matching `embed_text()` instead of legacy `SimpleNamespace(embeddings=[...])` objects that were truthy even when empty.
+- **Call assertions**: `mock_embed.call_args.args[0]` / `args[1]` align with `(model, text)` positional signature.
+- **`tests/test_cli.py::_run_cli`**: Subprocess helpers set **`PYTHONUTF8`**, **`PYTHONIOENCODING=utf-8`**, **`encoding="utf-8"` / `errors="replace"`**, and a **120s** timeout so Windows subprocess capture works with emoji in `main.py` output and cold Chroma imports.
+
 ## [0.35.0] - 2026-05-15 (Fiscal Architecture — Prose Tax, Forensic Receipts, Typed Retrieval)
 
 ### Added

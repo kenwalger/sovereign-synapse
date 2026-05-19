@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -25,12 +25,19 @@ def _run_cli(args: list[str], cwd: Path | None = None) -> subprocess.CompletedPr
     Returns:
         Completed process with stdout, stderr, returncode.
     """
+    env = os.environ.copy()
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+
     return subprocess.run(
         [sys.executable, "main.py"] + args,
         cwd=cwd or Path.cwd(),
         capture_output=True,
         text=True,
-        timeout=10,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+        env=env,
     )
 
 
@@ -125,10 +132,10 @@ def test_index_embedding_failure_increments_failed(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Verify index correctly increments failed counter when embedding returns empty.
+    """Verify index increments failed counter when embed_text returns empty.
 
-    Mocks ollama.embed to return no embeddings; cmd_index should print a WARNING
-    for the file and report failed=1 in the summary.
+    Mocks embed_text to return []; cmd_index prints an embedding warning and
+    reports failed=1 in the summary.
     """
     synapse_dir = tmp_path / "synapses"
     synapse_dir.mkdir()
@@ -152,7 +159,7 @@ Test response.
     args = argparse.Namespace(synapses_dir=str(synapse_dir), chroma_dir=chroma_dir)
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = SimpleNamespace(embeddings=[])
+        mock_embed.return_value = []
         cmd_index(args)
 
     captured = capsys.readouterr()
@@ -191,10 +198,9 @@ The Movesense Sensor by Suunto offers raw accelerometer and gyroscope data.
 
     chroma_dir = str(tmp_path / "chroma")
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
 
         cmd_index(argparse.Namespace(synapses_dir=str(synapse_dir), chroma_dir=chroma_dir))
         capsys.readouterr()
@@ -272,7 +278,7 @@ B response.
     ]
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = SimpleNamespace(embeddings=[[0.1] * 1024])
+        mock_embed.return_value = [0.1] * 1024
 
         with patch.object(VectorStore, "query", return_value=mock_results):
             cmd_query(
