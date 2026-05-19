@@ -8,6 +8,7 @@ venv/
 
 # Sovereign Synapse Data
 raw_data/
+vault_backup_20260519/
 vault/chroma/
 vault/synapses/
 vault/keys/*.key
