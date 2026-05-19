@@ -172,8 +172,10 @@ def _structural_contract(
     asset_metadata = {
         "uuid": str(metadata.get("uuid", receipt_id)),
         "receipt_id": receipt_id,
+        "signature_hex": str(metadata.get("signature_hex", "")),
         "forensic_receipt": forensic_receipt,
         "prose_tax_redacted": prose_tax_redacted,
+        "structural_signal": distilled[:2000] if distilled else "",
         "source": str(metadata.get("source", "")),
         "model": str(metadata.get("model", "")),
         "original_timestamp": str(metadata.get("original_timestamp", "")),

@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.0] - 2026-05-16 (Post 7.2 — Ed25519 signing & distill_and_sign)
+
+### Added
+- **`ContextCleaner.distill_and_sign`**: Distills assistant prose tax, computes deterministic SHA-256 `receipt_id` / `uuid`, and signs the canonical payload with **Ed25519**. **`ensure_signing_keypair`** creates `vault/keys/sovereign_signing.key` and `.pub` on first use (`SYNAPSE_KEYS_DIR` override).
+- **`ContextCleaner.verify_signature`**: Local verification of `signature_hex` against vault public key material.
+- **Dependency**: `cryptography>=42.0.0` for Ed25519.
+
+### Changed
+- **`adapters/openai_adapter`**: `write_turn` routes turns through `distill_and_sign`; frontmatter includes `signature_hex`, `prose_tax_redacted`, and forensic fields.
+- **`mcp_server/server.py`**: Structural Contracts expose `signature_hex` and `structural_signal` in `metadata` / `provenance`.
+- **`schemas/synapse_manifest.json`**: Documents `signature_hex` field.
+
+### Security
+- **`vault/keys/*.key`**, **`vault/keys/*.pub`**, and **`vault_backup*/`** added to `.gitignore`.
+
 ## [0.35.1] - 2026-05-16 (Tests — embed_text mocks & CLI subprocess)
 
 ### Fixed (tests)

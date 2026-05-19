@@ -281,6 +281,7 @@ def test_search_synapses_returns_structural_contract():
             "forensic_integrity": "1.0",
             "prose_tax_redacted": True,
             "structural_signal": "BLE accelerometer setup.",
+            "signature_hex": "ab" * 64,
         },
         _SYNAPSE_METAS[1],
         _SYNAPSE_METAS[3],
@@ -305,7 +306,9 @@ def test_search_synapses_returns_structural_contract():
     assert first["distilled_signal"] == "BLE accelerometer setup."
     assert first["metadata"]["forensic_receipt"] == "1.0"
     assert first["metadata"]["prose_tax_redacted"] is True
-    assert first["provenance"]["forensic_receipt"] == "1.0"
+    assert first["metadata"]["signature_hex"] == "ab" * 64
+    assert first["metadata"]["structural_signal"] == "BLE accelerometer setup."
+    assert first["provenance"]["signature_hex"] == "ab" * 64
 
 
 def test_search_synapses_n_results_upper_bound():

@@ -40,6 +40,11 @@
       "type": "string",
       "description": "Distilled content: code, logic, and facts without prose tax."
     },
+    "signature_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$",
+      "description": "Ed25519 signature (hex) over receipt_id, timestamp, structural_signal, and user text."
+    },
     "source": {
       "type": "string",
       "description": "Ingestion source (e.g. gpt_export, physical_notebook)."
@@ -89,6 +94,8 @@
             "original_timestamp": { "type": "string" },
             "forensic_integrity": { "type": "string" },
             "prose_tax_redacted": {},
+            "signature_hex": { "type": "string" },
+            "structural_signal": { "type": "string" },
             "uuid": { "type": "string" }
           }
         },

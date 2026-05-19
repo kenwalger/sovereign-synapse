@@ -1,9 +1,13 @@
-"""Heuristic-based scanner for AI conversational noise detection and signal distillation."""
+"""Heuristic prose-tax distillation and Ed25519 signing for Sovereign Synapses."""
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Lines that are almost always prose tax (polite filler), not structural signal.
 _PROSE_TAX_LINE_PATTERNS = [
@@ -30,11 +34,95 @@ _STRUCTURAL_LINE = re.compile(
     re.IGNORECASE,
 )
 
+DEFAULT_KEYS_DIR = Path("vault/keys")
+PRIVATE_KEY_FILE = "sovereign_signing.key"
+PUBLIC_KEY_FILE = "sovereign_signing.pub"
+FORENSIC_INTEGRITY_VERSION = "1.0"
+
+
+def _default_keys_dir() -> Path:
+    override = os.environ.get("SYNAPSE_KEYS_DIR", "").strip()
+    return Path(override) if override else DEFAULT_KEYS_DIR
+
+
+def ensure_signing_keypair(keys_dir: Path | None = None) -> Path:
+    """Create an Ed25519 key pair under *keys_dir* when none exists.
+
+    Returns:
+        Path to the directory containing ``sovereign_signing.key`` and
+        ``sovereign_signing.pub``.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    directory = Path(keys_dir) if keys_dir is not None else _default_keys_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    priv_path = directory / PRIVATE_KEY_FILE
+    pub_path = directory / PUBLIC_KEY_FILE
+
+    if priv_path.is_file() and pub_path.is_file():
+        return directory
+
+    private_key = Ed25519PrivateKey.generate()
+    priv_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    pub_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    priv_path.write_bytes(priv_bytes)
+    pub_path.write_text(pub_bytes.hex(), encoding="utf-8")
+    try:
+        os.chmod(priv_path, 0o600)
+    except OSError:
+        pass
+    return directory
+
+
+def _load_private_key(keys_dir: Path) -> Any:
+    from cryptography.hazmat.primitives import serialization
+
+    priv_path = keys_dir / PRIVATE_KEY_FILE
+    if not priv_path.is_file():
+        ensure_signing_keypair(keys_dir)
+    data = priv_path.read_bytes()
+    return serialization.load_pem_private_key(data, password=None)
+
+
+def _load_public_key_bytes(keys_dir: Path) -> bytes:
+    pub_path = keys_dir / PUBLIC_KEY_FILE
+    if not pub_path.is_file():
+        ensure_signing_keypair(keys_dir)
+    return bytes.fromhex(pub_path.read_text(encoding="utf-8").strip())
+
+
+def _deterministic_receipt_id(user_text: str, timestamp: datetime, source: str) -> str:
+    seed = f"{user_text}|{timestamp.isoformat()}|{source}"
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return f"urn:synapse:receipt:{digest}"
+
+
+def _signing_payload(
+    receipt_id: str,
+    structural_signal: str,
+    user_text: str,
+    timestamp: datetime,
+) -> bytes:
+    canonical = (
+        f"{receipt_id}\n"
+        f"{timestamp.isoformat()}\n"
+        f"{structural_signal}\n"
+        f"{user_text}"
+    )
+    return canonical.encode("utf-8")
+
 
 class ContextCleaner:
     """Heuristic-based scanner to identify and flag AI conversational noise."""
 
-    # Patterns that appear at the START of a response
     PREAMBLE_PATTERNS = [
         r"^Certainly!.*",
         r"^I'd be happy to help.*",
@@ -44,10 +132,9 @@ class ContextCleaner:
         r"^Here is the information you requested.*",
     ]
 
-    # Patterns that appear at the END of a response
     POSTAMBLE_PATTERNS = [
         r".*I hope this helps\.?$",
-        r".*Is there anything else I can assist you with\?$",  # \? escaped for literal ?
+        r".*Is there anything else I can assist you with\?$",
         r".*Let me know if you have any other questions\.?$",
     ]
 
@@ -92,7 +179,6 @@ class ContextCleaner:
             return False
         if _STRUCTURAL_LINE.search(stripped):
             return True
-        # Dense technical prose: multiple tokens with punctuation or digits
         words = stripped.split()
         if len(words) >= 4 and any(c.isdigit() for c in stripped):
             return True
@@ -134,7 +220,6 @@ class ContextCleaner:
 
         distilled = "\n".join(parts).strip()
         if not distilled:
-            # Fallback: return non-boilerplate lines only
             kept = [ln for ln in lines if ln.strip() and not cls._line_is_prose_tax(ln)]
             distilled = "\n".join(kept).strip()
         return distilled
@@ -169,16 +254,7 @@ class ContextCleaner:
 
     @classmethod
     def distill_signal(cls, text: str, *, use_ollama: bool | None = None) -> str:
-        """Strip 'Prose Tax' and return 'Structural Signal' (code, logic, facts).
-
-        Args:
-            text: Raw assistant or document text.
-            use_ollama: When True, try SYNAPSE_DISTILL_LLM; when None, honor env
-                SYNAPSE_DISTILL_USE_OLLAMA=1.
-
-        Returns:
-            Distilled structural content.
-        """
+        """Strip 'Prose Tax' and return 'Structural Signal' (code, logic, facts)."""
         if not text or not text.strip():
             return ""
         if use_ollama is None:
@@ -190,3 +266,73 @@ class ContextCleaner:
         if use_ollama:
             return cls._distill_via_ollama(text)
         return cls._distill_heuristic(text)
+
+    @classmethod
+    def verify_signature(
+        cls,
+        signature_hex: str,
+        *,
+        receipt_id: str,
+        structural_signal: str,
+        user_text: str,
+        timestamp: datetime,
+        keys_dir: Path | None = None,
+    ) -> bool:
+        """Return True when *signature_hex* validates the canonical signing payload."""
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        directory = Path(keys_dir) if keys_dir is not None else _default_keys_dir()
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(_load_public_key_bytes(directory))
+            payload = _signing_payload(receipt_id, structural_signal, user_text, timestamp)
+            public_key.verify(bytes.fromhex(signature_hex), payload)
+            return True
+        except (InvalidSignature, ValueError, OSError):
+            return False
+
+    @classmethod
+    def distill_and_sign(
+        cls,
+        user_text: str,
+        assistant_text: str,
+        timestamp: datetime,
+        source: str = "openai",
+        *,
+        keys_dir: Path | None = None,
+        use_ollama: bool | None = None,
+    ) -> dict[str, str | bool]:
+        """Distill assistant prose tax, anchor a forensic receipt, and Ed25519-sign the turn.
+
+        Generates a local Ed25519 key pair under ``vault/keys/`` (or ``SYNAPSE_KEYS_DIR``)
+        when no signing material exists yet.
+
+        Returns:
+            Frontmatter-ready fields: ``uuid``, ``receipt_id``, ``structural_signal``,
+            ``prose_tax_redacted``, ``signature_hex``, ``forensic_receipt``,
+            ``forensic_integrity``, ``preamble``, ``postamble``.
+        """
+        directory = Path(keys_dir) if keys_dir is not None else _default_keys_dir()
+        ensure_signing_keypair(directory)
+
+        structural_signal = cls.distill_signal(assistant_text, use_ollama=use_ollama)
+        prose_tax_redacted = not cls.is_clean(assistant_text) or (
+            structural_signal.strip() != assistant_text.strip()
+        )
+        receipt_id = _deterministic_receipt_id(user_text, timestamp, source)
+
+        private_key = _load_private_key(directory)
+        payload = _signing_payload(receipt_id, structural_signal, user_text, timestamp)
+        signature_hex = private_key.sign(payload).hex()
+
+        return {
+            "uuid": receipt_id,
+            "receipt_id": receipt_id,
+            "structural_signal": structural_signal,
+            "prose_tax_redacted": prose_tax_redacted,
+            "signature_hex": signature_hex,
+            "forensic_receipt": FORENSIC_INTEGRITY_VERSION,
+            "forensic_integrity": FORENSIC_INTEGRITY_VERSION,
+            "preamble": cls.is_preamble(assistant_text),
+            "postamble": cls.is_postamble(assistant_text),
+        }

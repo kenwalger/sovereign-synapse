@@ -10,6 +10,11 @@ venv/
 raw_data/
 vault/chroma/
 vault/synapses/
+vault/keys/*.key
+vault/keys/*.pub
+vault_backup/
+vault_backup_*/
+*.sqlite3
 
 # Editor
 .vscode/
