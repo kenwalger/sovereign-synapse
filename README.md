@@ -188,6 +188,10 @@ Add this block to your Cursor MCP config (`~/.cursor/mcp.json` or workspace `.cu
 
 > **Tip:** Pull the reflection LLM once: `ollama pull llama3`
 
+### Running tests
+
+From the repo root, with dependencies installed (`pip install -r requirements.txt` and `pip install -r requirements-dev.txt`), run **`pytest`** locally. On Windows, if third-party pytest plugins break collection (e.g. Celery / incompatible stacks), use **`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`** when invoking pytest.
+
 ---
 
 _The Scribe is no longer just a project. It is a partner._

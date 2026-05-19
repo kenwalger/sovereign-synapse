@@ -8,7 +8,6 @@ import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import patch
 
 import frontmatter
@@ -62,7 +61,7 @@ def test_add_synapse_parses_file_and_calls_embedding(
     """Verify add_synapse parses the file and invokes the embedding function.
 
     Uses tmp_path for temporary synapse files (auto-cleaned). Mocks
-    ollama.embed to return an EmbedResponse-like object with .embeddings.
+    embed_text to return a plain embedding vector (list[float]).
 
     Args:
         tmp_path: Pytest temporary directory fixture.
@@ -73,10 +72,9 @@ def test_add_synapse_parses_file_and_calls_embedding(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024  # mxbai-embed-large uses 1024-dim vectors
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
 
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
@@ -86,8 +84,8 @@ def test_add_synapse_parses_file_and_calls_embedding(
 
     mock_embed.assert_called_once()
     call_args = mock_embed.call_args
-    assert call_args.kwargs["model"] == "mxbai-embed-large"
-    input_text = call_args.kwargs["input"]
+    assert call_args.args[0] == "mxbai-embed-large"
+    input_text = call_args.args[1]
     assert "What wearable provides raw sensor data?" in input_text
     assert "Movesense Sensor" in input_text
 
@@ -120,10 +118,9 @@ Test response.
     malformed_synapse_path.write_text(malformed_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
 
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(malformed_synapse_path))
@@ -219,10 +216,9 @@ And more text after it.
     synapse_path.write_text(content_with_hr, encoding="utf-8")
 
     fake_embedding = [0.2] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
 
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
@@ -230,7 +226,7 @@ And more text after it.
     assert status == "SUCCESS"
     assert doc_id == "b2c3d4e5-f6a7-8901-bcde-f23456789012"
     # Verify the body passed to embed includes content after the ---
-    call_input = mock_embed.call_args.kwargs["input"]
+    call_input = mock_embed.call_args.args[1]
     assert "And more text after it" in call_input
     assert "---" in call_input
 
@@ -562,10 +558,9 @@ def test_add_synapse_returns_skipped_when_content_unchanged(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         store = VectorStore(persist_directory=temp_persist_dir)
         status1, doc_id1 = store.add_synapse(str(synapse_path))
         status2, doc_id2 = store.add_synapse(str(synapse_path))
@@ -601,10 +596,9 @@ Long question.
     synapse_path.write_text(content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         store = VectorStore(persist_directory=temp_persist_dir)
         status1, doc_id = store.add_synapse(str(synapse_path))
 
@@ -620,7 +614,7 @@ Long question.
 
     # Re-add: should trigger full re-index (chunk count mismatch)
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         status2, _ = store.add_synapse(str(synapse_path))
 
     assert status2 == "SUCCESS"
@@ -640,10 +634,9 @@ def test_delete_failure_aborts_upsert(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         store = VectorStore(persist_directory=temp_persist_dir)
         with patch.object(
             store._collection,
@@ -668,10 +661,9 @@ def test_reindex_on_hash_mismatch(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         store = VectorStore(persist_directory=temp_persist_dir)
         status1, doc_id = store.add_synapse(str(synapse_path))
         assert status1 == "SUCCESS"
@@ -685,7 +677,7 @@ def test_reindex_on_hash_mismatch(
 
     assert status2 == "SUCCESS"
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         results = store.query("Garmin Fenix raw sensor", n_results=3)
     assert any("Garmin" in (r.get("document") or "") for r in results)
 
@@ -700,7 +692,7 @@ def test_add_synapse_returns_failed_when_embedding_empty(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = SimpleNamespace(embeddings=[])
+        mock_embed.return_value = []
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
 
@@ -729,10 +721,9 @@ Long question.
     synapse_path.write_text(content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
         store = VectorStore(persist_directory=temp_persist_dir)
         status, doc_id = store.add_synapse(str(synapse_path))
 
@@ -769,12 +760,12 @@ Long question.
 
     call_count = 0
 
-    def mock_embed_side_effect(*args, **kwargs):
+    def mock_embed_side_effect(*_args: object, **_kwargs: object):
         nonlocal call_count
         call_count += 1
         if call_count == 2:
-            return SimpleNamespace(embeddings=[])  # fail second chunk
-        return SimpleNamespace(embeddings=[[0.1] * 1024])
+            return []  # fail second chunk
+        return [0.1] * 1024
 
     with patch("core.vector_store.embed_text") as mock_embed:
         mock_embed.side_effect = mock_embed_side_effect
@@ -801,7 +792,7 @@ def test_vector_store_query_empty_collection_returns_empty_list(
         temp_persist_dir: Temporary ChromaDB persistence path.
     """
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = SimpleNamespace(embeddings=[[0.1] * 1024])
+        mock_embed.return_value = [0.1] * 1024
 
         store = VectorStore(persist_directory=temp_persist_dir)
         results = store.query("any query", n_results=5)
@@ -826,10 +817,9 @@ def test_vector_store_query_returns_top_matches(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     with patch("core.vector_store.embed_text") as mock_embed:
-        mock_embed.return_value = mock_response
+        mock_embed.return_value = fake_embedding
 
         store = VectorStore(persist_directory=temp_persist_dir)
         status, _ = store.add_synapse(str(synapse_path))
@@ -857,14 +847,13 @@ def test_query_returns_empty_on_embedding_failure(
     synapse_path.write_text(sample_synapse_content, encoding="utf-8")
 
     fake_embedding = [0.1] * 1024
-    mock_response = SimpleNamespace(embeddings=[fake_embedding])
 
     call_count = [0]
 
     def embed_side_effect(*args, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
-            return mock_response  # add_synapse
+            return fake_embedding  # add_synapse
         raise ollama.ResponseError("Connection refused", 500)  # query
 
     with patch("core.vector_store.embed_text") as mock_embed:
