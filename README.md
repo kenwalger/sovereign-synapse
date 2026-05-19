@@ -30,7 +30,7 @@ Sovereign Synapse is an infrastructure-first engine designed to aggregate fragme
 - **`unbroken_voice.py`** — Build **Sovereign_Persona.json** (Reasoning Fingerprint + legacy system prompt) from the most reflective synapses, using Ollama only
 - **`core/`** — The engine: `context_cleaner.py` (prose-tax detection + `distill_signal`) and `vector_store.py`
 - **`schemas/`** — `synapse_manifest.json` (typed Sovereign Asset / Structural Contract schema for agents)
-- **`vault/keys/`** — Local Ed25519 signing material (`sovereign_signing.key` / `.pub`; generated on first ingest)
+- **`vault/keys/`** — Local Ed25519 signing material (`sovereign_signing.key` / `.pub`; absolute path under repo root, generated on first ingest; never commit)
 - **`mcp_server/`** — MCP server exposing the vault to Cursor, Claude Desktop, and other MCP hosts
 - **`vault/synapses/`** — Turn-based Markdown files (The Source of Truth)
 - **`vault/chroma/`** — Local vector persistence for semantic search

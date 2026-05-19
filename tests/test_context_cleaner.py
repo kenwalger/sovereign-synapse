@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 
+import pytest
+
 from core.context_cleaner import (
+    DEFAULT_KEYS_DIR,
     PRIVATE_KEY_FILE,
     PUBLIC_KEY_FILE,
     ContextCleaner,
+    _default_keys_dir,
     ensure_signing_keypair,
+    resolve_keys_dir,
 )
 
 
@@ -62,6 +68,39 @@ def test_distill_signal_empty_input():
 def test_is_clean_empty_text():
     assert ContextCleaner.is_clean("")
     assert ContextCleaner.is_clean("   ")
+
+
+def test_default_keys_dir_is_absolute_and_repo_scoped():
+    keys_dir = _default_keys_dir()
+    assert keys_dir.is_absolute()
+    assert keys_dir == resolve_keys_dir(None)
+    assert keys_dir.name == "keys"
+    assert os.path.basename(os.path.dirname(keys_dir)) == "vault"
+    assert os.path.normpath(str(keys_dir)) == os.path.normpath(DEFAULT_KEYS_DIR)
+
+
+def test_resolve_keys_dir_normalizes_relative_override(tmp_path, monkeypatch):
+    rel = "custom/keys"
+    monkeypatch.chdir(tmp_path)
+    resolved = resolve_keys_dir(rel)
+    assert resolved.is_absolute()
+    assert resolved == (tmp_path / "custom" / "keys").resolve()
+
+
+def test_ensure_signing_keypair_raises_on_orphan_private_only(tmp_path):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    (keys_dir / PRIVATE_KEY_FILE).write_bytes(b"-----BEGIN PRIVATE KEY-----\n")
+    with pytest.raises(RuntimeError, match="incomplete"):
+        ensure_signing_keypair(keys_dir)
+
+
+def test_ensure_signing_keypair_raises_on_orphan_public_only(tmp_path):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    (keys_dir / PUBLIC_KEY_FILE).write_text("aa" * 32, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="orphan"):
+        ensure_signing_keypair(keys_dir)
 
 
 def test_ensure_signing_keypair_creates_files(tmp_path):

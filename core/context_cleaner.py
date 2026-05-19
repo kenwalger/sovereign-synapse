@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -34,19 +35,59 @@ _STRUCTURAL_LINE = re.compile(
     re.IGNORECASE,
 )
 
-DEFAULT_KEYS_DIR = Path("vault/keys")
+_CORE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_CORE_DIR, os.pardir))
+DEFAULT_KEYS_DIR = os.path.abspath(os.path.join(_REPO_ROOT, "vault", "keys"))
 PRIVATE_KEY_FILE = "sovereign_signing.key"
 PUBLIC_KEY_FILE = "sovereign_signing.pub"
 FORENSIC_INTEGRITY_VERSION = "1.0"
 
 
 def _default_keys_dir() -> Path:
+    """Absolute vault/keys path (repo root), independent of process CWD."""
     override = os.environ.get("SYNAPSE_KEYS_DIR", "").strip()
-    return Path(override) if override else DEFAULT_KEYS_DIR
+    if override:
+        return Path(os.path.abspath(override))
+    return Path(DEFAULT_KEYS_DIR)
 
 
-def ensure_signing_keypair(keys_dir: Path | None = None) -> Path:
+def resolve_keys_dir(keys_dir: Path | str | None = None) -> Path:
+    """Resolve signing key directory to an absolute path."""
+    if keys_dir is None:
+        return _default_keys_dir()
+    return Path(os.path.abspath(str(keys_dir)))
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write *data* to *path* atomically via a sibling temp file and ``os.replace``."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        dir=str(path.parent),
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    tmp = Path(tmp_path)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    _atomic_write_bytes(path, text.encode("utf-8"))
+
+
+def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
     """Create an Ed25519 key pair under *keys_dir* when none exists.
+
+    Never overwrites a lone key file if its pair is missing (anti-orphan guard).
+    Initial creation uses atomic writes so partial files cannot be left behind.
 
     Returns:
         Path to the directory containing ``sovereign_signing.key`` and
@@ -55,13 +96,27 @@ def ensure_signing_keypair(keys_dir: Path | None = None) -> Path:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    directory = Path(keys_dir) if keys_dir is not None else _default_keys_dir()
+    directory = resolve_keys_dir(keys_dir)
     directory.mkdir(parents=True, exist_ok=True)
     priv_path = directory / PRIVATE_KEY_FILE
     pub_path = directory / PUBLIC_KEY_FILE
 
-    if priv_path.is_file() and pub_path.is_file():
+    priv_exists = priv_path.is_file()
+    pub_exists = pub_path.is_file()
+
+    if priv_exists and pub_exists:
         return directory
+
+    if priv_exists != pub_exists:
+        present = PRIVATE_KEY_FILE if priv_exists else PUBLIC_KEY_FILE
+        missing = PUBLIC_KEY_FILE if priv_exists else PRIVATE_KEY_FILE
+        raise RuntimeError(
+            f"Sovereign Synapse signing key pair is incomplete under {directory}: "
+            f"found {present} but missing {missing}. "
+            "Restore the missing file from backup, or remove both files to generate "
+            "a new pair. Refusing to overwrite a single key file — that would orphan "
+            "existing signatures."
+        )
 
     private_key = Ed25519PrivateKey.generate()
     priv_bytes = private_key.private_bytes(
@@ -73,8 +128,8 @@ def ensure_signing_keypair(keys_dir: Path | None = None) -> Path:
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
-    priv_path.write_bytes(priv_bytes)
-    pub_path.write_text(pub_bytes.hex(), encoding="utf-8")
+    _atomic_write_bytes(priv_path, priv_bytes)
+    _atomic_write_text(pub_path, pub_bytes.hex())
     try:
         os.chmod(priv_path, 0o600)
     except OSError:
@@ -282,7 +337,7 @@ class ContextCleaner:
         from cryptography.exceptions import InvalidSignature
         from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
-        directory = Path(keys_dir) if keys_dir is not None else _default_keys_dir()
+        directory = resolve_keys_dir(keys_dir)
         try:
             public_key = Ed25519PublicKey.from_public_bytes(_load_public_key_bytes(directory))
             payload = _signing_payload(receipt_id, structural_signal, user_text, timestamp)
@@ -312,7 +367,7 @@ class ContextCleaner:
             ``prose_tax_redacted``, ``signature_hex``, ``forensic_receipt``,
             ``forensic_integrity``, ``preamble``, ``postamble``.
         """
-        directory = Path(keys_dir) if keys_dir is not None else _default_keys_dir()
+        directory = resolve_keys_dir(keys_dir)
         ensure_signing_keypair(directory)
 
         structural_signal = cls.distill_signal(assistant_text, use_ollama=use_ollama)

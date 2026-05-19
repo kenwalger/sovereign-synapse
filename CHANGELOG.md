@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.2] - 2026-05-19 (Signing keys — absolute paths, anti-orphan, atomic writes)
+
+### Fixed
+- **`core/context_cleaner`**: `vault/keys/` resolves to an **absolute** path anchored at the repository root (via `__file__`), so `main.py` ingest and `mcp_server` always use the same key files regardless of CWD. `SYNAPSE_KEYS_DIR` overrides are also normalized with `os.path.abspath`.
+- **`ensure_signing_keypair`**: Raises **`RuntimeError`** when only one of `sovereign_signing.key` / `.pub` exists — never silently regenerates the missing half (prevents signature orphaning).
+- **Key creation**: Private and public keys are written **atomically** (temp file + `os.replace`) so crashes cannot leave a mismatched pair.
+
+### Added
+- **`resolve_keys_dir()`** helper and tests for absolute resolution, orphan detection, and key lifecycle idempotency.
+
 ## [0.36.1] - 2026-05-19 (Forensic validation — full signal, provenance isolation)
 
 ### Fixed
