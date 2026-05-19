@@ -6,10 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.7] - 2026-05-19 (non-destructive keypair validation)
+
+### Fixed
+- **`_validate_signing_keypair_on_disk`**: Removed automatic key deletion on validation failure. Only **`InvalidSignature`** / **`ValueError`** during the smoke sign/verify pass raise the concurrent-init **`RuntimeError`**; **`PermissionError`**, **`FileNotFoundError`**, and other read errors propagate without unlinking files (prevents orphaning historical signatures).
+- **`ensure_signing_keypair`**: **`os.chmod`** failures are **`_logger.warning`** instead of silent no-ops.
+
 ## [0.36.6] - 2026-05-19 (keypair TOCTOU validation, contract user_text)
 
 ### Fixed
-- **`ensure_signing_keypair`**: After atomic writes, reloads keys from disk, signs a smoke payload (`b"test"`), and verifies round-trip. On mismatch or read error, deletes the pair and raises **`RuntimeError`** (concurrent-init race fail-closed).
+- **`ensure_signing_keypair`**: After atomic writes, reloads keys from disk, signs a smoke payload (`b"test"`), and verifies round-trip. On cryptographic mismatch, raises **`RuntimeError`** (concurrent-init race fail-closed).
 - **`_structural_contract`**: **`metadata`** / **`provenance`** now include **`user_text`** and **`timestamp`** (plus existing **`receipt_id`**, **`structural_signal`**, **`signature_hex`**) so clients can run **`verify_signature`** without parsing document bodies. **`user_text`** is taken from Chroma metadata when present, else parsed from `### User` / `### Assistant` Markdown sections.
 
 ### Added

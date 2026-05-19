@@ -125,7 +125,13 @@ def _atomic_write_text(path: Path, text: str) -> None:
 
 
 def _validate_signing_keypair_on_disk(directory: Path) -> None:
-    """Round-trip sign/verify keys read from disk; fail closed on mismatch."""
+    """Round-trip sign/verify keys read from disk after initial creation.
+
+    Read/permission failures propagate unchanged and never delete key files.
+    Only a cryptographic mismatch (``InvalidSignature`` / ``ValueError``) maps
+    to a concurrent-init race ``RuntimeError`` — files are left on disk for manual
+    recovery.
+    """
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -133,33 +139,21 @@ def _validate_signing_keypair_on_disk(directory: Path) -> None:
     priv_path = directory / PRIVATE_KEY_FILE
     pub_path = directory / PUBLIC_KEY_FILE
 
-    def _remove_corrupted_pair() -> None:
-        for path in (priv_path, pub_path):
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
+    priv_data = _read_key_bytes(priv_path, "Ed25519 private signing key")
+    private_key = serialization.load_pem_private_key(priv_data, password=None)
+    pub_bytes = bytes.fromhex(
+        _read_key_text(pub_path, "Ed25519 public signing key").strip(),
+    )
+    public_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
 
     try:
-        priv_data = _read_key_bytes(priv_path, "Ed25519 private signing key")
-        private_key = serialization.load_pem_private_key(priv_data, password=None)
-        pub_bytes = bytes.fromhex(
-            _read_key_text(pub_path, "Ed25519 public signing key").strip(),
-        )
-        public_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
         signature = private_key.sign(_KEYPAIR_SMOKE_PAYLOAD)
         public_key.verify(signature, _KEYPAIR_SMOKE_PAYLOAD)
-    except InvalidSignature as exc:
-        _remove_corrupted_pair()
+    except (InvalidSignature, ValueError) as exc:
         raise RuntimeError(
             "Concurrent key initialization race detected. "
-            "Incomplete or mismatched key pair written.",
-        ) from exc
-    except Exception as exc:
-        _remove_corrupted_pair()
-        raise RuntimeError(
-            "Concurrent key initialization race detected. "
-            "Incomplete or mismatched key pair written.",
+            "Incomplete or mismatched key pair written. "
+            "Remove both key files under the keys directory manually before retrying.",
         ) from exc
 
 
@@ -212,8 +206,12 @@ def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
     _atomic_write_text(pub_path, pub_bytes.hex())
     try:
         os.chmod(priv_path, 0o600)
-    except OSError:
-        pass
+    except OSError as exc:
+        _logger.warning(
+            "Could not set permissions on %s to 0600 (%s)",
+            priv_path,
+            exc,
+        )
     _validate_signing_keypair_on_disk(directory)
     return directory
 

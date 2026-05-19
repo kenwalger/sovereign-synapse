@@ -138,7 +138,7 @@ def test_read_key_bytes_raises_friendly_error_on_permission_denied(tmp_path):
         _read_key_bytes(priv_path, "Ed25519 private signing key")
 
 
-def test_validate_signing_keypair_on_disk_rejects_mismatch_and_cleans_up(tmp_path):
+def test_validate_signing_keypair_on_disk_raises_on_mismatch_without_deleting(tmp_path):
     keys_dir = tmp_path / "keys"
     ensure_signing_keypair(keys_dir)
     (keys_dir / PUBLIC_KEY_FILE).write_text("ff" * 32, encoding="utf-8")
@@ -146,8 +146,25 @@ def test_validate_signing_keypair_on_disk_rejects_mismatch_and_cleans_up(tmp_pat
     with pytest.raises(RuntimeError, match="race detected"):
         _validate_signing_keypair_on_disk(keys_dir)
 
-    assert not (keys_dir / PRIVATE_KEY_FILE).is_file()
-    assert not (keys_dir / PUBLIC_KEY_FILE).is_file()
+    assert (keys_dir / PRIVATE_KEY_FILE).is_file()
+    assert (keys_dir / PUBLIC_KEY_FILE).is_file()
+
+
+def test_validate_signing_keypair_on_disk_does_not_delete_on_read_failure(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+
+    with (
+        patch(
+            "core.context_cleaner._read_key_bytes",
+            side_effect=RuntimeError("permission denied"),
+        ),
+        pytest.raises(RuntimeError, match="permission denied"),
+    ):
+        _validate_signing_keypair_on_disk(keys_dir)
+
+    assert (keys_dir / PRIVATE_KEY_FILE).is_file()
+    assert (keys_dir / PUBLIC_KEY_FILE).is_file()
 
 
 def test_ensure_signing_keypair_creates_files(tmp_path):
