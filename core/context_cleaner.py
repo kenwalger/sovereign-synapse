@@ -58,15 +58,53 @@ def resolve_keys_dir(keys_dir: Path | str | None = None) -> Path:
     return Path(os.path.abspath(str(keys_dir)))
 
 
+def _permission_error_read(path: Path, purpose: str) -> RuntimeError:
+    return RuntimeError(
+        f"Cannot read Sovereign Synapse signing material at {path} ({purpose}): "
+        "permission denied. Ensure this process can read files under vault/keys/ "
+        f"({PRIVATE_KEY_FILE} and {PUBLIC_KEY_FILE}), or set SYNAPSE_KEYS_DIR to a "
+        "directory with correct ACLs for ingest and MCP."
+    )
+
+
+def _read_key_bytes(path: Path, purpose: str) -> bytes:
+    """Read a key file; translate ``PermissionError`` into a clear ``RuntimeError``."""
+    try:
+        return path.read_bytes()
+    except PermissionError as exc:
+        raise _permission_error_read(path, purpose) from exc
+
+
+def _read_key_text(path: Path, purpose: str) -> str:
+    """Read a key file as UTF-8 text; translate ``PermissionError`` into ``RuntimeError``."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except PermissionError as exc:
+        raise _permission_error_read(path, purpose) from exc
+
+
 def _atomic_write_bytes(path: Path, data: bytes) -> None:
-    """Write *data* to *path* atomically via a sibling temp file and ``os.replace``."""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    """Write *data* to *path* atomically via a temp file in the same directory.
+
+    Temp files are always created under ``path.parent`` (e.g. ``vault/keys/``), never
+    in the system temp folder, so ``os.replace`` stays on one filesystem (avoids EXDEV).
+    """
+    path = Path(path)
+    directory = path.parent
+    directory.mkdir(parents=True, exist_ok=True)
     fd, tmp_path = tempfile.mkstemp(
-        dir=str(path.parent),
         prefix=f".{path.name}.",
         suffix=".tmp",
+        dir=str(directory),
     )
     tmp = Path(tmp_path)
+    if tmp.parent.resolve() != directory.resolve():
+        os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Atomic key write failed: temporary file {tmp} is not in {directory}. "
+            "Refusing a cross-device replace that would raise EXDEV."
+        )
     try:
         with os.fdopen(fd, "wb") as handle:
             handle.write(data)
@@ -143,7 +181,7 @@ def _load_private_key(keys_dir: Path) -> Any:
     priv_path = keys_dir / PRIVATE_KEY_FILE
     if not priv_path.is_file():
         ensure_signing_keypair(keys_dir)
-    data = priv_path.read_bytes()
+    data = _read_key_bytes(priv_path, "Ed25519 private signing key")
     return serialization.load_pem_private_key(data, password=None)
 
 
@@ -151,7 +189,7 @@ def _load_public_key_bytes(keys_dir: Path) -> bytes:
     pub_path = keys_dir / PUBLIC_KEY_FILE
     if not pub_path.is_file():
         ensure_signing_keypair(keys_dir)
-    return bytes.fromhex(pub_path.read_text(encoding="utf-8").strip())
+    return bytes.fromhex(_read_key_text(pub_path, "Ed25519 public signing key").strip())
 
 
 def _deterministic_receipt_id(user_text: str, timestamp: datetime, source: str) -> str:

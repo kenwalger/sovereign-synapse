@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.3] - 2026-05-19 (Signing keys — same-dir atomic writes, permission errors)
+
+### Fixed
+- **`core/context_cleaner`**: Atomic key writes always create temp files **inside** the target `vault/keys/` directory (never the system temp dir), with a guard that refuses cross-directory replace (avoids Windows **EXDEV**).
+- **`core/context_cleaner`**: Key reads use **`_read_key_bytes` / `_read_key_text`**; **`PermissionError`** becomes a clear **`RuntimeError`** for ingest and MCP when `vault/keys/` is not readable.
+
+### Added
+- Tests for same-directory `mkstemp` and permission-denied read path.
+
 ## [0.36.2] - 2026-05-19 (Signing keys — absolute paths, anti-orphan, atomic writes)
 
 ### Fixed

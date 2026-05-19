@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from datetime import datetime, timezone
+from unittest.mock import patch
 
 import pytest
 
@@ -12,7 +14,9 @@ from core.context_cleaner import (
     PRIVATE_KEY_FILE,
     PUBLIC_KEY_FILE,
     ContextCleaner,
+    _atomic_write_bytes,
     _default_keys_dir,
+    _read_key_bytes,
     ensure_signing_keypair,
     resolve_keys_dir,
 )
@@ -101,6 +105,36 @@ def test_ensure_signing_keypair_raises_on_orphan_public_only(tmp_path):
     (keys_dir / PUBLIC_KEY_FILE).write_text("aa" * 32, encoding="utf-8")
     with pytest.raises(RuntimeError, match="orphan"):
         ensure_signing_keypair(keys_dir)
+
+
+def test_atomic_write_uses_keys_directory_not_system_temp(tmp_path, monkeypatch):
+    """Temp files for os.replace must live beside the destination (same filesystem)."""
+    target = tmp_path / "keys" / PUBLIC_KEY_FILE
+    seen_dirs: list[str] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def spy_mkstemp(**kwargs):
+        seen_dirs.append(kwargs["dir"])
+        return real_mkstemp(**kwargs)
+
+    with patch("core.context_cleaner.tempfile.mkstemp", spy_mkstemp):
+        _atomic_write_bytes(target, b"deadbeef")
+
+    assert seen_dirs == [str(target.parent.resolve())]
+    assert target.read_bytes() == b"deadbeef"
+    assert not list(target.parent.glob(f".{PUBLIC_KEY_FILE}.*.tmp"))
+
+
+def test_read_key_bytes_raises_friendly_error_on_permission_denied(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    priv_path = keys_dir / PRIVATE_KEY_FILE
+
+    with (
+        patch.object(type(priv_path), "read_bytes", side_effect=PermissionError("Access is denied")),
+        pytest.raises(RuntimeError, match="permission denied"),
+    ):
+        _read_key_bytes(priv_path, "Ed25519 private signing key")
 
 
 def test_ensure_signing_keypair_creates_files(tmp_path):
