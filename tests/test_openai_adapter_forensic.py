@@ -39,7 +39,7 @@ def test_generate_forensic_receipt_matches_write_turn_signature(
         "I hope this helps."
     )
 
-    receipt = adapter.generate_forensic_receipt(user, assistant, ts, "openai")
+    receipt = adapter.generate_forensic_receipt(user, ts, "openai", assistant_text=assistant)
     adapter.write_turn(
         user_text=user,
         assistant_text=assistant,
@@ -64,3 +64,14 @@ def test_generate_forensic_receipt_matches_write_turn_signature(
     content = md_files[0].read_text(encoding="utf-8")
     assert f"receipt_id: {receipt['receipt_id']}" in content
     assert f"signature_hex: {receipt['signature_hex']}" in content
+
+
+def test_generate_forensic_receipt_legacy_three_arg_signature(tmp_path, isolated_keys_dir):
+    """Legacy generate_forensic_receipt(user, timestamp, source) must remain valid."""
+    adapter = OpenAIAdapter(output_path=str(tmp_path / "synapses"))
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    receipt = adapter.generate_forensic_receipt("Index my vault.", ts, "openai")
+
+    assert receipt["receipt_id"].startswith("urn:synapse:receipt:")
+    assert len(str(receipt["signature_hex"])) == 128
+    assert receipt["structural_signal"] == ""

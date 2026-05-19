@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.37.0] - 2026-05-19 (signing payload v2, API restore, key gates)
+
+### Fixed
+- **`generate_forensic_receipt`**: Restored legacy signature **`(user_text, timestamp, source, *, assistant_text="")`** for three-argument callers; empty assistant text is supported.
+- **`_signing_payload`**: Canonical bytes are now **sorted JSON** (newline-safe; prevents field injection via embedded newlines). **Breaking** for signatures produced before this release — re-ingest to refresh `signature_hex`.
+- **`_load_private_key`**: Always invokes **`ensure_signing_keypair`** first so the anti-orphan guard runs before any private-key read.
+- **`ensure_signing_keypair`**: **`_enforce_private_key_permissions`** halts with **`PermissionError`** when the private key remains group/world-readable after `chmod`; chmod failures are logged.
+
+### Added
+- Tests for legacy receipt API, JSON payload injection safety, and Unix permission enforcement.
+
 ## [0.36.7] - 2026-05-19 (non-destructive keypair validation)
 
 ### Fixed

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -124,6 +125,35 @@ def _atomic_write_text(path: Path, text: str) -> None:
     _atomic_write_bytes(path, text.encode("utf-8"))
 
 
+def _private_key_is_group_or_world_accessible(priv_path: Path) -> bool:
+    """Return True when Unix mode bits grant group/other access to *priv_path*."""
+    if os.name == "nt":
+        return False
+    try:
+        return (priv_path.stat().st_mode & 0o077) != 0
+    except OSError:
+        return True
+
+
+def _enforce_private_key_permissions(priv_path: Path) -> None:
+    """Require owner-only private key permissions; halt if the key stays exposed."""
+    try:
+        os.chmod(priv_path, 0o600)
+    except OSError as exc:
+        _logger.warning(
+            "Could not set permissions on %s to 0600 (%s)",
+            priv_path,
+            exc,
+        )
+
+    if _private_key_is_group_or_world_accessible(priv_path):
+        raise PermissionError(
+            f"Private signing key at {priv_path} is group- or world-readable. "
+            "Refusing to continue with an exposed plaintext key. "
+            "chmod 600 the file or fix ACLs, then retry.",
+        )
+
+
 def _validate_signing_keypair_on_disk(directory: Path) -> None:
     """Round-trip sign/verify keys read from disk after initial creation.
 
@@ -204,14 +234,7 @@ def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
     )
     _atomic_write_bytes(priv_path, priv_bytes)
     _atomic_write_text(pub_path, pub_bytes.hex())
-    try:
-        os.chmod(priv_path, 0o600)
-    except OSError as exc:
-        _logger.warning(
-            "Could not set permissions on %s to 0600 (%s)",
-            priv_path,
-            exc,
-        )
+    _enforce_private_key_permissions(priv_path)
     _validate_signing_keypair_on_disk(directory)
     return directory
 
@@ -219,9 +242,8 @@ def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
 def _load_private_key(keys_dir: Path) -> Any:
     from cryptography.hazmat.primitives import serialization
 
+    ensure_signing_keypair(keys_dir)
     priv_path = keys_dir / PRIVATE_KEY_FILE
-    if not priv_path.is_file():
-        ensure_signing_keypair(keys_dir)
     data = _read_key_bytes(priv_path, "Ed25519 private signing key")
     return serialization.load_pem_private_key(data, password=None)
 
@@ -245,13 +267,19 @@ def _signing_payload(
     user_text: str,
     timestamp: datetime,
 ) -> bytes:
-    canonical = (
-        f"{receipt_id}\n"
-        f"{timestamp.isoformat()}\n"
-        f"{structural_signal}\n"
-        f"{user_text}"
-    )
-    return canonical.encode("utf-8")
+    """Deterministic, newline-safe canonical signing bytes (sorted JSON)."""
+    canonical = {
+        "receipt_id": receipt_id,
+        "structural_signal": structural_signal,
+        "timestamp": timestamp.isoformat(),
+        "user_text": user_text,
+    }
+    return json.dumps(
+        canonical,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
 
 
 class ContextCleaner:

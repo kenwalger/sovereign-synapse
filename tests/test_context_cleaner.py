@@ -16,7 +16,9 @@ from core.context_cleaner import (
     ContextCleaner,
     _atomic_write_bytes,
     _default_keys_dir,
+    _enforce_private_key_permissions,
     _read_key_bytes,
+    _signing_payload,
     _validate_signing_keypair_on_disk,
     ensure_signing_keypair,
     resolve_keys_dir,
@@ -136,6 +138,28 @@ def test_read_key_bytes_raises_friendly_error_on_permission_denied(tmp_path):
         pytest.raises(RuntimeError, match="permission denied"),
     ):
         _read_key_bytes(priv_path, "Ed25519 private signing key")
+
+
+def test_signing_payload_newline_safe_and_deterministic():
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    injected = _signing_payload("urn:synapse:receipt:a", "x", "y\nz", ts)
+    control = _signing_payload("urn:synapse:receipt:a", "x\ny", "z", ts)
+    assert injected != control
+    repeat = _signing_payload("urn:synapse:receipt:a", "x", "y\nz", ts)
+    assert injected == repeat
+    assert b'"receipt_id"' in injected
+    assert b"\n" not in injected or injected.count(b"\n") == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix mode bits unavailable on Windows")
+def test_enforce_private_key_permissions_rejects_world_readable(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    priv_path = keys_dir / PRIVATE_KEY_FILE
+    priv_path.chmod(0o644)
+
+    with pytest.raises(PermissionError, match="world-readable"):
+        _enforce_private_key_permissions(priv_path)
 
 
 def test_validate_signing_keypair_on_disk_raises_on_mismatch_without_deleting(tmp_path):

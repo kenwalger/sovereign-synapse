@@ -186,11 +186,16 @@ class OpenAIAdapter(BaseAdapter):
     def generate_forensic_receipt(
         self,
         user_text: str,
-        assistant_text: str,
         timestamp: datetime,
         source: str = "openai",
+        *,
+        assistant_text: str = "",
     ) -> dict[str, str | bool]:
-        """Create a deterministic forensic anchor using the same payload as ``write_turn``."""
+        """Create a deterministic forensic anchor using the same payload as ``write_turn``.
+
+        Legacy callers may invoke ``generate_forensic_receipt(user_text, timestamp, source)``
+        without ``assistant_text``; an empty assistant body is distilled and signed.
+        """
         signed = self._distill_and_sign_turn(user_text, assistant_text, timestamp, source)
         return {
             "receipt_id": signed["receipt_id"],
