@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import re
 import tempfile
@@ -41,6 +42,7 @@ DEFAULT_KEYS_DIR = os.path.abspath(os.path.join(_REPO_ROOT, "vault", "keys"))
 PRIVATE_KEY_FILE = "sovereign_signing.key"
 PUBLIC_KEY_FILE = "sovereign_signing.pub"
 FORENSIC_INTEGRITY_VERSION = "1.0"
+_logger = logging.getLogger(__name__)
 
 
 def _default_keys_dir() -> Path:
@@ -382,6 +384,18 @@ class ContextCleaner:
             public_key.verify(bytes.fromhex(signature_hex), payload)
             return True
         except (InvalidSignature, ValueError, OSError):
+            return False
+        except PermissionError as exc:
+            _logger.warning(
+                "Cannot verify signature: public signing key not readable (%s)",
+                exc,
+            )
+            return False
+        except RuntimeError as exc:
+            _logger.warning(
+                "Cannot verify signature: public signing key unavailable (%s)",
+                exc,
+            )
             return False
 
     @classmethod

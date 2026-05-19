@@ -21,6 +21,7 @@ from mcp_server.server import (
     REFLECT_MAX_CHARS,
     REFLECT_MAX_SNIPPETS,
     _ReadOnlyCollection,
+    _structural_contract,
     get_recent_context,
     get_vault_policy,
     query_legacy_persona,
@@ -341,28 +342,30 @@ def test_structural_contract_preserves_full_structural_signal():
 
 
 def test_structural_contract_provenance_is_deep_copy():
-    """Mutating provenance must not alter metadata (immutable ledger view)."""
-    col = _make_collection_mock()
-    col.query.return_value["metadatas"] = [[
-        {
-            **_SYNAPSE_METAS[1],
-            "uuid": "urn:synapse:receipt:abc123",
-            "receipt_id": "urn:synapse:receipt:abc123",
-            "structural_signal": "signal text",
-        },
-    ]]
-    fake_embed = [0.1] * 1024
+    """Mutating metadata must not alter provenance (immutable ledger view)."""
+    chroma_meta = {
+        **_SYNAPSE_METAS[1],
+        "uuid": "urn:synapse:receipt:abc123",
+        "receipt_id": "urn:synapse:receipt:abc123",
+        "structural_signal": "signal text",
+        "prose_tax_redacted": True,
+        "signature_hex": "ab" * 64,
+    }
+    response = _structural_contract(
+        "urn:synapse:receipt:abc123#0",
+        "signal text",
+        chroma_meta,
+        0.12,
+    )
 
-    with (
-        patch("mcp_server.server._get_collection", return_value=col),
-        patch("mcp_server.server._embed", return_value=fake_embed),
-    ):
-        raw = search_synapses(query="wearable", n_results=1)
+    assert response["metadata"] is not response["provenance"]
+    assert response["metadata"]["prose_tax_redacted"] is True
+    assert response["provenance"]["prose_tax_redacted"] is True
 
-    first = json.loads(raw)["results"][0]
-    assert first["metadata"] is not first["provenance"]
-    first["provenance"]["signature_hex"] = "mutated"
-    assert first["metadata"]["signature_hex"] != "mutated"
+    response["metadata"]["prose_tax_redacted"] = False
+
+    assert response["metadata"]["prose_tax_redacted"] is False
+    assert response["provenance"]["prose_tax_redacted"] is True
 
 
 def test_search_synapses_n_results_upper_bound():

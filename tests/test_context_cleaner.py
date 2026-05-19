@@ -168,6 +168,31 @@ def test_distill_and_sign_returns_forensic_fields(tmp_path):
     assert "Paris" in str(signed["structural_signal"])
 
 
+def test_verify_signature_returns_false_on_key_permission_error(tmp_path, caplog):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    with (
+        patch(
+            "core.context_cleaner._load_public_key_bytes",
+            side_effect=RuntimeError("permission denied"),
+        ),
+        caplog.at_level("WARNING"),
+    ):
+        ok = ContextCleaner.verify_signature(
+            "aa" * 64,
+            receipt_id="urn:synapse:receipt:x",
+            structural_signal="signal",
+            user_text="user",
+            timestamp=ts,
+            keys_dir=keys_dir,
+        )
+
+    assert ok is False
+    assert any("Cannot verify signature" in record.message for record in caplog.records)
+
+
 def test_distill_and_sign_verifies_signature(tmp_path):
     keys_dir = tmp_path / "keys"
     ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)

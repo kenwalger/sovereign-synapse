@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.4] - 2026-05-19 (verify_signature contract, provenance test)
+
+### Fixed
+- **`ContextCleaner.verify_signature`**: Key read failures (`PermissionError`, permission-related `RuntimeError`) log a warning and return **`False`** instead of raising, preserving the boolean contract.
+- **`tests/test_mcp_server`**: Provenance isolation test mutates `metadata` in place (no JSON round-trip) and asserts `provenance` is unchanged.
+
 ## [0.36.3] - 2026-05-19 (Signing keys — same-dir atomic writes, permission errors)
 
 ### Fixed
