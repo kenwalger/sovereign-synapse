@@ -385,15 +385,11 @@ class ContextCleaner:
             return True
         except (InvalidSignature, ValueError, OSError):
             return False
-        except PermissionError as exc:
+        except (PermissionError, FileNotFoundError, RuntimeError) as exc:
             _logger.warning(
-                "Cannot verify signature: public signing key not readable (%s)",
-                exc,
-            )
-            return False
-        except RuntimeError as exc:
-            _logger.warning(
-                "Cannot verify signature: public signing key unavailable (%s)",
+                "Cannot verify Sovereign Synapse signature: public signing key "
+                "unavailable or inaccessible (%s). Ensure vault/keys/ is readable "
+                "by this process or set SYNAPSE_KEYS_DIR with correct permissions.",
                 exc,
             )
             return False

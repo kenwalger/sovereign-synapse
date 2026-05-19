@@ -190,7 +190,7 @@ def test_verify_signature_returns_false_on_key_permission_error(tmp_path, caplog
         )
 
     assert ok is False
-    assert any("Cannot verify signature" in record.message for record in caplog.records)
+    assert any("Cannot verify Sovereign Synapse signature" in record.message for record in caplog.records)
 
 
 def test_distill_and_sign_verifies_signature(tmp_path):

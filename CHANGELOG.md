@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.36.4] - 2026-05-19 (verify_signature contract, provenance test)
 
 ### Fixed
-- **`ContextCleaner.verify_signature`**: Key read failures (`PermissionError`, permission-related `RuntimeError`) log a warning and return **`False`** instead of raising, preserving the boolean contract.
-- **`tests/test_mcp_server`**: Provenance isolation test mutates `metadata` in place (no JSON round-trip) and asserts `provenance` is unchanged.
+- **`ContextCleaner.verify_signature`**: The full public-key read and verify path is wrapped in **`try/except`**; **`PermissionError`**, **`FileNotFoundError`**, and key-related **`RuntimeError`** log a **`logging.warning`** and return **`False`** (never crash on the read path).
+- **`tests/test_mcp_server`**: Provenance isolation calls **`_structural_contract`** directly (no JSON round-trip), mutates **`metadata["prose_tax_redacted"]`**, and asserts **`provenance`** stays unchanged.
 
 ## [0.36.3] - 2026-05-19 (Signing keys — same-dir atomic writes, permission errors)
 
