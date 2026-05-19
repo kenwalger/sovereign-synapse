@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.5] - 2026-05-19 (verify_signature except order, adapter key isolation)
+
+### Fixed
+- **`ContextCleaner.verify_signature`**: **`FileNotFoundError`** / permission handlers are evaluated **before** **`OSError`** so missing key files log a warning instead of being swallowed silently (`FileNotFoundError` subclasses `OSError`).
+
+### Changed
+- **`tests/test_openai_adapter_forensic`**: Forensic adapter tests set **`SYNAPSE_KEYS_DIR`** to a unique **`tmp_path`** directory and assert production **`vault/keys/`** mtimes are unchanged.
+
 ## [0.36.4] - 2026-05-19 (verify_signature contract, provenance test)
 
 ### Fixed

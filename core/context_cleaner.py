@@ -383,8 +383,6 @@ class ContextCleaner:
             payload = _signing_payload(receipt_id, structural_signal, user_text, timestamp)
             public_key.verify(bytes.fromhex(signature_hex), payload)
             return True
-        except (InvalidSignature, ValueError, OSError):
-            return False
         except (PermissionError, FileNotFoundError, RuntimeError) as exc:
             _logger.warning(
                 "Cannot verify Sovereign Synapse signature: public signing key "
@@ -392,6 +390,8 @@ class ContextCleaner:
                 "by this process or set SYNAPSE_KEYS_DIR with correct permissions.",
                 exc,
             )
+            return False
+        except (InvalidSignature, ValueError, OSError):
             return False
 
     @classmethod
