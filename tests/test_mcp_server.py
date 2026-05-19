@@ -21,6 +21,7 @@ from mcp_server.server import (
     REFLECT_MAX_CHARS,
     REFLECT_MAX_SNIPPETS,
     _ReadOnlyCollection,
+    _structural_contract,
     get_recent_context,
     get_vault_policy,
     query_legacy_persona,
@@ -281,6 +282,7 @@ def test_search_synapses_returns_structural_contract():
             "forensic_integrity": "1.0",
             "prose_tax_redacted": True,
             "structural_signal": "BLE accelerometer setup.",
+            "signature_hex": "ab" * 64,
         },
         _SYNAPSE_METAS[1],
         _SYNAPSE_METAS[3],
@@ -305,7 +307,94 @@ def test_search_synapses_returns_structural_contract():
     assert first["distilled_signal"] == "BLE accelerometer setup."
     assert first["metadata"]["forensic_receipt"] == "1.0"
     assert first["metadata"]["prose_tax_redacted"] is True
-    assert first["provenance"]["forensic_receipt"] == "1.0"
+    assert first["metadata"]["signature_hex"] == "ab" * 64
+    assert first["metadata"]["structural_signal"] == "BLE accelerometer setup."
+    assert first["provenance"]["signature_hex"] == "ab" * 64
+    assert first["metadata"]["timestamp"] == _SYNAPSE_METAS[1]["original_timestamp"]
+    assert first["provenance"]["timestamp"] == first["metadata"]["timestamp"]
+
+
+def test_structural_contract_includes_user_text_and_timestamp_for_verification():
+    """Contract must expose user_text, timestamp, receipt_id, and structural_signal."""
+    chroma_meta = {
+        **_SYNAPSE_METAS[1],
+        "uuid": "urn:synapse:receipt:abc123",
+        "receipt_id": "urn:synapse:receipt:abc123",
+        "structural_signal": "BLE accelerometer setup.",
+        "signature_hex": "ab" * 64,
+    }
+    document = (
+        "### User\nHow do I stream raw accelerometer data?\n\n"
+        "### Assistant\nBLE accelerometer setup."
+    )
+    response = _structural_contract(
+        "urn:synapse:receipt:abc123#0",
+        document,
+        chroma_meta,
+        0.05,
+    )
+
+    assert response["metadata"]["user_text"] == "How do I stream raw accelerometer data?"
+    assert response["provenance"]["user_text"] == response["metadata"]["user_text"]
+    assert response["metadata"]["timestamp"] == _SYNAPSE_METAS[1]["original_timestamp"]
+    assert response["metadata"]["receipt_id"] == "urn:synapse:receipt:abc123"
+    assert response["metadata"]["structural_signal"] == "BLE accelerometer setup."
+
+
+def test_structural_contract_preserves_full_structural_signal():
+    """Canonical structural_signal must not be truncated (signature verification)."""
+    long_signal = "x" * 5000
+    col = _make_collection_mock()
+    col.query.return_value["metadatas"] = [[
+        {
+            **_SYNAPSE_METAS[1],
+            "uuid": "urn:synapse:receipt:long",
+            "receipt_id": "urn:synapse:receipt:long",
+            "structural_signal": long_signal,
+            "signature_hex": "cd" * 64,
+        },
+    ]]
+    col.query.return_value["documents"] = [[long_signal]]
+    fake_embed = [0.1] * 1024
+
+    with (
+        patch("mcp_server.server._get_collection", return_value=col),
+        patch("mcp_server.server._embed", return_value=fake_embed),
+    ):
+        raw = search_synapses(query="wearable", n_results=1)
+
+    first = json.loads(raw)["results"][0]
+    assert len(first["metadata"]["structural_signal"]) == 5000
+    assert len(first["distilled_signal"]) == 5000
+    assert len(first["distilled_signal_excerpt"]) == 2000
+    assert first["metadata"]["structural_signal"] == first["distilled_signal"]
+
+
+def test_structural_contract_provenance_is_deep_copy():
+    """Mutating metadata must not alter provenance (immutable ledger view)."""
+    chroma_meta = {
+        **_SYNAPSE_METAS[1],
+        "uuid": "urn:synapse:receipt:abc123",
+        "receipt_id": "urn:synapse:receipt:abc123",
+        "structural_signal": "signal text",
+        "prose_tax_redacted": True,
+        "signature_hex": "ab" * 64,
+    }
+    response = _structural_contract(
+        "urn:synapse:receipt:abc123#0",
+        "signal text",
+        chroma_meta,
+        0.12,
+    )
+
+    assert response["metadata"] is not response["provenance"]
+    assert response["metadata"]["prose_tax_redacted"] is True
+    assert response["provenance"]["prose_tax_redacted"] is True
+
+    response["metadata"]["prose_tax_redacted"] = False
+
+    assert response["metadata"]["prose_tax_redacted"] is False
+    assert response["provenance"]["prose_tax_redacted"] is True
 
 
 def test_search_synapses_n_results_upper_bound():

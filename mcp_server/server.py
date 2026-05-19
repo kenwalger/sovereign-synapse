@@ -23,6 +23,7 @@ Read-only / Legacy Mode (set ``SYNAPSE_MCP_READ_ONLY=1`` and/or
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
@@ -57,6 +58,8 @@ COLLECTION_NAME = os.environ.get("SYNAPSE_COLLECTION", "synapses")
 EMBEDDING_MODEL = os.environ.get("SYNAPSE_EMBED_MODEL", "mxbai-embed-large")
 REFLECT_LLM = os.environ.get("SYNAPSE_REFLECT_LLM", "llama3")
 CHUNK_SIZE = 800  # match core/vector_store.py
+# Display-only cap; canonical structural_signal in metadata is never truncated.
+DISPLAY_SUMMARY_MAX = 2000
 
 # Limits for reflect_on_memories to prevent context-window overflow
 REFLECT_MAX_SNIPPETS = 10
@@ -152,6 +155,38 @@ def _prose_tax_redacted_from_metadata(metadata: dict[str, Any], body: str) -> bo
     return not ContextCleaner.is_clean(body)
 
 
+_USER_TEXT_SECTION = re.compile(
+    r"^### User\s*\r?\n(.*?)(?:\r?\n\r?\n### Assistant|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _user_text_from_metadata_and_body(metadata: dict[str, Any], body: str) -> str:
+    """Resolve canonical user prompt from Chroma metadata or synapse Markdown body."""
+    stored = metadata.get("user_text")
+    if isinstance(stored, str) and stored.strip():
+        return stored.strip()
+    match = _USER_TEXT_SECTION.search(body or "")
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _contract_timestamp(metadata: dict[str, Any]) -> str:
+    """ISO timestamp for verify_signature (metadata.timestamp or original_timestamp)."""
+    raw = metadata.get("timestamp") or metadata.get("original_timestamp") or ""
+    return str(raw)
+
+
+def _display_summary(text: str, max_len: int = DISPLAY_SUMMARY_MAX) -> str:
+    """Short preview for hosts; never used for signature verification."""
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len]
+
+
 def _structural_contract(
     doc_id: str,
     document: str,
@@ -163,30 +198,38 @@ def _structural_contract(
     body = document or ""
     stored_signal = metadata.get("structural_signal")
     if isinstance(stored_signal, str) and stored_signal.strip():
-        distilled = stored_signal.strip()
+        canonical_signal = stored_signal.strip()
     else:
-        distilled = ContextCleaner.distill_signal(body)
+        canonical_signal = ContextCleaner.distill_signal(body)
     receipt_id = str(metadata.get("receipt_id") or metadata.get("uuid") or "")
     forensic_receipt = _forensic_receipt_from_metadata(metadata)
     prose_tax_redacted = _prose_tax_redacted_from_metadata(metadata, body)
+    user_text = _user_text_from_metadata_and_body(metadata, body)
+    timestamp = _contract_timestamp(metadata)
     asset_metadata = {
         "uuid": str(metadata.get("uuid", receipt_id)),
         "receipt_id": receipt_id,
+        "signature_hex": str(metadata.get("signature_hex", "")),
         "forensic_receipt": forensic_receipt,
         "prose_tax_redacted": prose_tax_redacted,
+        "structural_signal": canonical_signal,
+        "user_text": user_text,
+        "timestamp": timestamp,
         "source": str(metadata.get("source", "")),
         "model": str(metadata.get("model", "")),
-        "original_timestamp": str(metadata.get("original_timestamp", "")),
+        "original_timestamp": timestamp,
         "forensic_integrity": str(metadata.get("forensic_integrity", forensic_receipt)),
     }
+    ledger_provenance = copy.deepcopy(asset_metadata)
     return {
         "contract_type": "sovereign_structural_contract",
         "receipt_id": receipt_id,
         "synapse_id": base_uuid,
         "chunk_id": doc_id,
         "metadata": asset_metadata,
-        "provenance": asset_metadata,
-        "distilled_signal": distilled[:2000] if distilled else "",
+        "provenance": ledger_provenance,
+        "distilled_signal": canonical_signal,
+        "distilled_signal_excerpt": _display_summary(canonical_signal),
         "distance": round(distance, 4) if distance is not None else None,
     }
 

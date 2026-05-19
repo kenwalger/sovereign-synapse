@@ -2,7 +2,29 @@
 
 from __future__ import annotations
 
-from core.context_cleaner import ContextCleaner
+import os
+import tempfile
+from datetime import datetime, timezone
+from unittest.mock import patch
+
+import pytest
+
+from core.context_cleaner import (
+    DEFAULT_KEYS_DIR,
+    PRIVATE_KEY_FILE,
+    PUBLIC_KEY_FILE,
+    ContextCleaner,
+    _atomic_write_bytes,
+    _default_keys_dir,
+    _enforce_private_key_permissions,
+    _load_private_key,
+    _load_public_key_bytes,
+    _read_key_bytes,
+    _signing_payload,
+    _validate_signing_keypair_on_disk,
+    ensure_signing_keypair,
+    resolve_keys_dir,
+)
 
 
 def test_is_preamble_detects_boilerplate():
@@ -55,3 +77,275 @@ def test_distill_signal_empty_input():
 def test_is_clean_empty_text():
     assert ContextCleaner.is_clean("")
     assert ContextCleaner.is_clean("   ")
+
+
+def test_default_keys_dir_is_absolute_and_repo_scoped():
+    keys_dir = _default_keys_dir()
+    assert keys_dir.is_absolute()
+    assert keys_dir == resolve_keys_dir(None)
+    assert keys_dir.name == "keys"
+    assert os.path.basename(os.path.dirname(keys_dir)) == "vault"
+    assert os.path.normpath(str(keys_dir)) == os.path.normpath(DEFAULT_KEYS_DIR)
+
+
+def test_resolve_keys_dir_normalizes_relative_override(tmp_path, monkeypatch):
+    rel = "custom/keys"
+    monkeypatch.chdir(tmp_path)
+    resolved = resolve_keys_dir(rel)
+    assert resolved.is_absolute()
+    assert resolved == (tmp_path / "custom" / "keys").resolve()
+
+
+def test_ensure_signing_keypair_raises_on_orphan_private_only(tmp_path):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    (keys_dir / PRIVATE_KEY_FILE).write_bytes(b"-----BEGIN PRIVATE KEY-----\n")
+    with pytest.raises(RuntimeError, match="incomplete"):
+        ensure_signing_keypair(keys_dir)
+
+
+def test_ensure_signing_keypair_raises_on_orphan_public_only(tmp_path):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    (keys_dir / PUBLIC_KEY_FILE).write_text("aa" * 32, encoding="utf-8")
+    with pytest.raises(RuntimeError, match="orphan"):
+        ensure_signing_keypair(keys_dir)
+
+
+def test_atomic_write_uses_keys_directory_not_system_temp(tmp_path, monkeypatch):
+    """Temp files for os.replace must live beside the destination (same filesystem)."""
+    target = tmp_path / "keys" / PUBLIC_KEY_FILE
+    seen_dirs: list[str] = []
+    real_mkstemp = tempfile.mkstemp
+
+    def spy_mkstemp(**kwargs):
+        seen_dirs.append(kwargs["dir"])
+        return real_mkstemp(**kwargs)
+
+    with patch("core.context_cleaner.tempfile.mkstemp", spy_mkstemp):
+        _atomic_write_bytes(target, b"deadbeef")
+
+    assert seen_dirs == [str(target.parent.resolve())]
+    assert target.read_bytes() == b"deadbeef"
+    assert not list(target.parent.glob(f".{PUBLIC_KEY_FILE}.*.tmp"))
+
+
+def test_read_key_bytes_raises_friendly_error_on_permission_denied(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    priv_path = keys_dir / PRIVATE_KEY_FILE
+
+    with (
+        patch.object(type(priv_path), "read_bytes", side_effect=PermissionError("Access is denied")),
+        pytest.raises(RuntimeError, match="permission denied"),
+    ):
+        _read_key_bytes(priv_path, "Ed25519 private signing key")
+
+
+def test_signing_payload_newline_safe_and_deterministic():
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    injected = _signing_payload("urn:synapse:receipt:a", "x", "y\nz", ts)
+    control = _signing_payload("urn:synapse:receipt:a", "x\ny", "z", ts)
+    assert injected != control
+    repeat = _signing_payload("urn:synapse:receipt:a", "x", "y\nz", ts)
+    assert injected == repeat
+    assert b'"receipt_id"' in injected
+    assert b"\n" not in injected or injected.count(b"\n") == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix mode bits unavailable on Windows")
+def test_enforce_private_key_permissions_rejects_world_readable(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    priv_path = keys_dir / PRIVATE_KEY_FILE
+    priv_path.chmod(0o644)
+
+    with pytest.raises(PermissionError, match="0o600"):
+        _enforce_private_key_permissions(priv_path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix mode bits unavailable on Windows")
+def test_load_private_key_enforces_permissions_on_every_read(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    (keys_dir / PRIVATE_KEY_FILE).chmod(0o644)
+
+    with pytest.raises(PermissionError, match="0o600"):
+        _load_private_key(keys_dir)
+
+
+def test_verify_signature_missing_public_key_does_not_create_keys(tmp_path, caplog):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    with caplog.at_level("WARNING"):
+        ok = ContextCleaner.verify_signature(
+            "aa" * 64,
+            receipt_id="urn:synapse:receipt:x",
+            structural_signal="signal",
+            user_text="user",
+            timestamp=ts,
+            keys_dir=keys_dir,
+        )
+
+    assert ok is False
+    assert not (keys_dir / PRIVATE_KEY_FILE).exists()
+    assert not (keys_dir / PUBLIC_KEY_FILE).exists()
+    assert any("Cannot verify Sovereign Synapse signature" in record.message for record in caplog.records)
+
+
+def test_load_public_key_bytes_does_not_create_keys(tmp_path):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        _load_public_key_bytes(keys_dir)
+
+    assert not (keys_dir / PRIVATE_KEY_FILE).exists()
+    assert not (keys_dir / PUBLIC_KEY_FILE).exists()
+
+
+def test_ensure_signing_keypair_encrypts_with_vault_passphrase(tmp_path, monkeypatch):
+    monkeypatch.setenv("SYNAPSE_VAULT_PASSPHRASE", "test-vault-secret")
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+
+    pem = (keys_dir / PRIVATE_KEY_FILE).read_bytes()
+    assert b"ENCRYPTED" in pem
+    assert _load_private_key(keys_dir) is not None
+
+
+def test_validate_signing_keypair_on_disk_raises_on_mismatch_without_deleting(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    (keys_dir / PUBLIC_KEY_FILE).write_text("ff" * 32, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="race detected"):
+        _validate_signing_keypair_on_disk(keys_dir)
+
+    assert (keys_dir / PRIVATE_KEY_FILE).is_file()
+    assert (keys_dir / PUBLIC_KEY_FILE).is_file()
+
+
+def test_validate_signing_keypair_on_disk_does_not_delete_on_read_failure(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+
+    with (
+        patch(
+            "core.context_cleaner._read_key_bytes",
+            side_effect=RuntimeError("permission denied"),
+        ),
+        pytest.raises(RuntimeError, match="permission denied"),
+    ):
+        _validate_signing_keypair_on_disk(keys_dir)
+
+    assert (keys_dir / PRIVATE_KEY_FILE).is_file()
+    assert (keys_dir / PUBLIC_KEY_FILE).is_file()
+
+
+def test_ensure_signing_keypair_creates_files(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    assert (keys_dir / PRIVATE_KEY_FILE).is_file()
+    assert (keys_dir / PUBLIC_KEY_FILE).is_file()
+    pub_before = (keys_dir / PUBLIC_KEY_FILE).read_text(encoding="utf-8")
+    ensure_signing_keypair(keys_dir)
+    assert (keys_dir / PUBLIC_KEY_FILE).read_text(encoding="utf-8") == pub_before
+
+
+def test_distill_and_sign_returns_forensic_fields(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    signed = ContextCleaner.distill_and_sign(
+        "What is Paris?",
+        (
+            "Certainly! Here are the facts:\n"
+            "- The capital of France is Paris.\n"
+            "I hope this helps."
+        ),
+        ts,
+        "openai",
+        keys_dir=keys_dir,
+    )
+    assert signed["uuid"] == signed["receipt_id"]
+    assert str(signed["receipt_id"]).startswith("urn:synapse:receipt:")
+    assert len(str(signed["signature_hex"])) == 128
+    assert signed["prose_tax_redacted"] is True
+    assert "Paris" in str(signed["structural_signal"])
+
+
+def test_verify_signature_logs_warning_on_missing_public_key(tmp_path, caplog):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    with caplog.at_level("WARNING"):
+        ok = ContextCleaner.verify_signature(
+            "aa" * 64,
+            receipt_id="urn:synapse:receipt:x",
+            structural_signal="signal",
+            user_text="user",
+            timestamp=ts,
+            keys_dir=keys_dir,
+        )
+
+    assert ok is False
+    assert any("Cannot verify Sovereign Synapse signature" in record.message for record in caplog.records)
+
+
+def test_verify_signature_returns_false_on_key_permission_error(tmp_path, caplog):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    with (
+        patch(
+            "core.context_cleaner._load_public_key_bytes",
+            side_effect=RuntimeError("permission denied"),
+        ),
+        caplog.at_level("WARNING"),
+    ):
+        ok = ContextCleaner.verify_signature(
+            "aa" * 64,
+            receipt_id="urn:synapse:receipt:x",
+            structural_signal="signal",
+            user_text="user",
+            timestamp=ts,
+            keys_dir=keys_dir,
+        )
+
+    assert ok is False
+    assert any("Cannot verify Sovereign Synapse signature" in record.message for record in caplog.records)
+
+
+def test_distill_and_sign_verifies_signature(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    user = "Explain BLE sensors."
+    assistant = "Use a Movesense IMU for raw accelerometer data."
+    signed = ContextCleaner.distill_and_sign(
+        user,
+        assistant,
+        ts,
+        "openai",
+        keys_dir=keys_dir,
+    )
+    assert ContextCleaner.verify_signature(
+        str(signed["signature_hex"]),
+        receipt_id=str(signed["receipt_id"]),
+        structural_signal=str(signed["structural_signal"]),
+        user_text=user,
+        timestamp=ts,
+        keys_dir=keys_dir,
+    )
+
+
+def test_distill_and_sign_deterministic_receipt_id(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+    a = ContextCleaner.distill_and_sign("hi", "hello", ts, "openai", keys_dir=keys_dir)
+    b = ContextCleaner.distill_and_sign("hi", "hello", ts, "openai", keys_dir=keys_dir)
+    assert a["receipt_id"] == b["receipt_id"]
+    assert a["signature_hex"] == b["signature_hex"]

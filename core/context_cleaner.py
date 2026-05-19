@@ -1,9 +1,16 @@
-"""Heuristic-based scanner for AI conversational noise detection and signal distillation."""
+"""Heuristic prose-tax distillation and Ed25519 signing for Sovereign Synapses."""
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import os
 import re
+import tempfile
+from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 # Lines that are almost always prose tax (polite filler), not structural signal.
 _PROSE_TAX_LINE_PATTERNS = [
@@ -30,11 +37,282 @@ _STRUCTURAL_LINE = re.compile(
     re.IGNORECASE,
 )
 
+_CORE_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT = os.path.abspath(os.path.join(_CORE_DIR, os.pardir))
+DEFAULT_KEYS_DIR = os.path.abspath(os.path.join(_REPO_ROOT, "vault", "keys"))
+PRIVATE_KEY_FILE = "sovereign_signing.key"
+PUBLIC_KEY_FILE = "sovereign_signing.pub"
+FORENSIC_INTEGRITY_VERSION = "1.0"
+_KEYPAIR_SMOKE_PAYLOAD = b"test"
+_logger = logging.getLogger(__name__)
+
+
+def _default_keys_dir() -> Path:
+    """Absolute vault/keys path (repo root), independent of process CWD."""
+    override = os.environ.get("SYNAPSE_KEYS_DIR", "").strip()
+    if override:
+        return Path(os.path.abspath(override))
+    return Path(DEFAULT_KEYS_DIR)
+
+
+def resolve_keys_dir(keys_dir: Path | str | None = None) -> Path:
+    """Resolve signing key directory to an absolute path."""
+    if keys_dir is None:
+        return _default_keys_dir()
+    return Path(os.path.abspath(str(keys_dir)))
+
+
+def _permission_error_read(path: Path, purpose: str) -> RuntimeError:
+    return RuntimeError(
+        f"Cannot read Sovereign Synapse signing material at {path} ({purpose}): "
+        "permission denied. Ensure this process can read files under vault/keys/ "
+        f"({PRIVATE_KEY_FILE} and {PUBLIC_KEY_FILE}), or set SYNAPSE_KEYS_DIR to a "
+        "directory with correct ACLs for ingest and MCP."
+    )
+
+
+def _read_key_bytes(path: Path, purpose: str) -> bytes:
+    """Read a key file; translate ``PermissionError`` into a clear ``RuntimeError``."""
+    try:
+        return path.read_bytes()
+    except PermissionError as exc:
+        raise _permission_error_read(path, purpose) from exc
+
+
+def _read_key_text(path: Path, purpose: str) -> str:
+    """Read a key file as UTF-8 text; translate ``PermissionError`` into ``RuntimeError``."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except PermissionError as exc:
+        raise _permission_error_read(path, purpose) from exc
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write *data* to *path* atomically via a temp file in the same directory.
+
+    Temp files are always created under ``path.parent`` (e.g. ``vault/keys/``), never
+    in the system temp folder, so ``os.replace`` stays on one filesystem (avoids EXDEV).
+    """
+    path = Path(path)
+    directory = path.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(directory),
+    )
+    tmp = Path(tmp_path)
+    if tmp.parent.resolve() != directory.resolve():
+        os.close(fd)
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"Atomic key write failed: temporary file {tmp} is not in {directory}. "
+            "Refusing a cross-device replace that would raise EXDEV."
+        )
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    _atomic_write_bytes(path, text.encode("utf-8"))
+
+
+def _private_key_is_group_or_world_accessible(priv_path: Path) -> bool:
+    """Return True when Unix mode bits grant group/other access to *priv_path*."""
+    if os.name == "nt":
+        return False
+    try:
+        return (priv_path.stat().st_mode & 0o077) != 0
+    except OSError:
+        return True
+
+
+def _assert_private_key_owner_only(priv_path: Path) -> None:
+    """Halt when POSIX mode bits expose the private key to group/other."""
+    if _private_key_is_group_or_world_accessible(priv_path):
+        raise PermissionError(
+            "Private key file permissions are too open. Must be owner-only (0o600).",
+        )
+
+
+def _vault_passphrase_bytes() -> bytes | None:
+    raw = os.environ.get("SYNAPSE_VAULT_PASSPHRASE", "").strip()
+    return raw.encode("utf-8") if raw else None
+
+
+def _private_key_encryption_algorithm() -> Any:
+    from cryptography.hazmat.primitives import serialization
+
+    passphrase = _vault_passphrase_bytes()
+    if passphrase:
+        return serialization.BestAvailableEncryption(passphrase)
+    return serialization.NoEncryption()
+
+
+def _load_pem_private_key(data: bytes) -> Any:
+    from cryptography.hazmat.primitives import serialization
+
+    return serialization.load_pem_private_key(data, password=_vault_passphrase_bytes())
+
+
+def _enforce_private_key_permissions(priv_path: Path) -> None:
+    """Require owner-only private key permissions after initial write."""
+    try:
+        os.chmod(priv_path, 0o600)
+    except OSError as exc:
+        _logger.warning(
+            "Could not set permissions on %s to 0600 (%s)",
+            priv_path,
+            exc,
+        )
+
+    _assert_private_key_owner_only(priv_path)
+
+
+def _validate_signing_keypair_on_disk(directory: Path) -> None:
+    """Round-trip sign/verify keys read from disk after initial creation.
+
+    Read/permission failures propagate unchanged and never delete key files.
+    Only a cryptographic mismatch (``InvalidSignature`` / ``ValueError``) maps
+    to a concurrent-init race ``RuntimeError`` — files are left on disk for manual
+    recovery.
+    """
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    priv_path = directory / PRIVATE_KEY_FILE
+    pub_path = directory / PUBLIC_KEY_FILE
+
+    priv_data = _read_key_bytes(priv_path, "Ed25519 private signing key")
+    private_key = _load_pem_private_key(priv_data)
+    pub_bytes = bytes.fromhex(
+        _read_key_text(pub_path, "Ed25519 public signing key").strip(),
+    )
+    public_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
+
+    try:
+        signature = private_key.sign(_KEYPAIR_SMOKE_PAYLOAD)
+        public_key.verify(signature, _KEYPAIR_SMOKE_PAYLOAD)
+    except (InvalidSignature, ValueError) as exc:
+        raise RuntimeError(
+            "Concurrent key initialization race detected. "
+            "Incomplete or mismatched key pair written. "
+            "Remove both key files under the keys directory manually before retrying.",
+        ) from exc
+
+
+def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
+    """Create an Ed25519 key pair under *keys_dir* when none exists.
+
+    Never overwrites a lone key file if its pair is missing (anti-orphan guard).
+    Initial creation uses atomic writes so partial files cannot be left behind.
+
+    Returns:
+        Path to the directory containing ``sovereign_signing.key`` and
+        ``sovereign_signing.pub``.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    directory = resolve_keys_dir(keys_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    priv_path = directory / PRIVATE_KEY_FILE
+    pub_path = directory / PUBLIC_KEY_FILE
+
+    priv_exists = priv_path.is_file()
+    pub_exists = pub_path.is_file()
+
+    if priv_exists and pub_exists:
+        return directory
+
+    if priv_exists != pub_exists:
+        present = PRIVATE_KEY_FILE if priv_exists else PUBLIC_KEY_FILE
+        missing = PUBLIC_KEY_FILE if priv_exists else PRIVATE_KEY_FILE
+        raise RuntimeError(
+            f"Sovereign Synapse signing key pair is incomplete under {directory}: "
+            f"found {present} but missing {missing}. "
+            "Restore the missing file from backup, or remove both files to generate "
+            "a new pair. Refusing to overwrite a single key file — that would orphan "
+            "existing signatures."
+        )
+
+    if _vault_passphrase_bytes() is None:
+        _logger.warning(
+            "SYNAPSE_VAULT_PASSPHRASE is unset; writing an unencrypted private key "
+            "at %s protected only by owner-only filesystem permissions (chmod 0o600).",
+            priv_path,
+        )
+
+    private_key = Ed25519PrivateKey.generate()
+    priv_bytes = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=_private_key_encryption_algorithm(),
+    )
+    pub_bytes = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    _atomic_write_bytes(priv_path, priv_bytes)
+    _atomic_write_text(pub_path, pub_bytes.hex())
+    _enforce_private_key_permissions(priv_path)
+    _validate_signing_keypair_on_disk(directory)
+    return directory
+
+
+def _load_private_key(keys_dir: Path) -> Any:
+    ensure_signing_keypair(keys_dir)
+    priv_path = keys_dir / PRIVATE_KEY_FILE
+    _assert_private_key_owner_only(priv_path)
+    data = _read_key_bytes(priv_path, "Ed25519 private signing key")
+    return _load_pem_private_key(data)
+
+
+def _load_public_key_bytes(keys_dir: Path) -> bytes:
+    """Load the public key bytes; never creates keys (verification read path)."""
+    pub_path = keys_dir / PUBLIC_KEY_FILE
+    return bytes.fromhex(_read_key_text(pub_path, "Ed25519 public signing key").strip())
+
+
+def _deterministic_receipt_id(user_text: str, timestamp: datetime, source: str) -> str:
+    seed = f"{user_text}|{timestamp.isoformat()}|{source}"
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
+    return f"urn:synapse:receipt:{digest}"
+
+
+def _signing_payload(
+    receipt_id: str,
+    structural_signal: str,
+    user_text: str,
+    timestamp: datetime,
+) -> bytes:
+    """Deterministic, newline-safe canonical signing bytes (sorted JSON)."""
+    canonical = {
+        "receipt_id": receipt_id,
+        "structural_signal": structural_signal,
+        "timestamp": timestamp.isoformat(),
+        "user_text": user_text,
+    }
+    return json.dumps(
+        canonical,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+
 
 class ContextCleaner:
     """Heuristic-based scanner to identify and flag AI conversational noise."""
 
-    # Patterns that appear at the START of a response
     PREAMBLE_PATTERNS = [
         r"^Certainly!.*",
         r"^I'd be happy to help.*",
@@ -44,10 +322,9 @@ class ContextCleaner:
         r"^Here is the information you requested.*",
     ]
 
-    # Patterns that appear at the END of a response
     POSTAMBLE_PATTERNS = [
         r".*I hope this helps\.?$",
-        r".*Is there anything else I can assist you with\?$",  # \? escaped for literal ?
+        r".*Is there anything else I can assist you with\?$",
         r".*Let me know if you have any other questions\.?$",
     ]
 
@@ -92,7 +369,6 @@ class ContextCleaner:
             return False
         if _STRUCTURAL_LINE.search(stripped):
             return True
-        # Dense technical prose: multiple tokens with punctuation or digits
         words = stripped.split()
         if len(words) >= 4 and any(c.isdigit() for c in stripped):
             return True
@@ -134,7 +410,6 @@ class ContextCleaner:
 
         distilled = "\n".join(parts).strip()
         if not distilled:
-            # Fallback: return non-boilerplate lines only
             kept = [ln for ln in lines if ln.strip() and not cls._line_is_prose_tax(ln)]
             distilled = "\n".join(kept).strip()
         return distilled
@@ -169,16 +444,7 @@ class ContextCleaner:
 
     @classmethod
     def distill_signal(cls, text: str, *, use_ollama: bool | None = None) -> str:
-        """Strip 'Prose Tax' and return 'Structural Signal' (code, logic, facts).
-
-        Args:
-            text: Raw assistant or document text.
-            use_ollama: When True, try SYNAPSE_DISTILL_LLM; when None, honor env
-                SYNAPSE_DISTILL_USE_OLLAMA=1.
-
-        Returns:
-            Distilled structural content.
-        """
+        """Strip 'Prose Tax' and return 'Structural Signal' (code, logic, facts)."""
         if not text or not text.strip():
             return ""
         if use_ollama is None:
@@ -190,3 +456,81 @@ class ContextCleaner:
         if use_ollama:
             return cls._distill_via_ollama(text)
         return cls._distill_heuristic(text)
+
+    @classmethod
+    def verify_signature(
+        cls,
+        signature_hex: str,
+        *,
+        receipt_id: str,
+        structural_signal: str,
+        user_text: str,
+        timestamp: datetime,
+        keys_dir: Path | None = None,
+    ) -> bool:
+        """Return True when *signature_hex* validates the canonical signing payload."""
+        from cryptography.exceptions import InvalidSignature
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+        directory = resolve_keys_dir(keys_dir)
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(_load_public_key_bytes(directory))
+            payload = _signing_payload(receipt_id, structural_signal, user_text, timestamp)
+            public_key.verify(bytes.fromhex(signature_hex), payload)
+            return True
+        except (PermissionError, FileNotFoundError, RuntimeError) as exc:
+            _logger.warning(
+                "Cannot verify Sovereign Synapse signature: public signing key "
+                "unavailable or inaccessible (%s). Ensure vault/keys/ is readable "
+                "by this process or set SYNAPSE_KEYS_DIR with correct permissions.",
+                exc,
+            )
+            return False
+        except (InvalidSignature, ValueError, OSError):
+            return False
+
+    @classmethod
+    def distill_and_sign(
+        cls,
+        user_text: str,
+        assistant_text: str,
+        timestamp: datetime,
+        source: str = "openai",
+        *,
+        keys_dir: Path | None = None,
+        use_ollama: bool | None = None,
+    ) -> dict[str, str | bool]:
+        """Distill assistant prose tax, anchor a forensic receipt, and Ed25519-sign the turn.
+
+        Generates a local Ed25519 key pair under ``vault/keys/`` (or ``SYNAPSE_KEYS_DIR``)
+        when no signing material exists yet.
+
+        Returns:
+            Frontmatter-ready fields: ``uuid``, ``receipt_id``, ``structural_signal``,
+            ``prose_tax_redacted``, ``signature_hex``, ``forensic_receipt``,
+            ``forensic_integrity``, ``preamble``, ``postamble``.
+        """
+        directory = resolve_keys_dir(keys_dir)
+        ensure_signing_keypair(directory)
+
+        structural_signal = cls.distill_signal(assistant_text, use_ollama=use_ollama)
+        prose_tax_redacted = not cls.is_clean(assistant_text) or (
+            structural_signal.strip() != assistant_text.strip()
+        )
+        receipt_id = _deterministic_receipt_id(user_text, timestamp, source)
+
+        private_key = _load_private_key(directory)
+        payload = _signing_payload(receipt_id, structural_signal, user_text, timestamp)
+        signature_hex = private_key.sign(payload).hex()
+
+        return {
+            "uuid": receipt_id,
+            "receipt_id": receipt_id,
+            "structural_signal": structural_signal,
+            "prose_tax_redacted": prose_tax_redacted,
+            "signature_hex": signature_hex,
+            "forensic_receipt": FORENSIC_INTEGRITY_VERSION,
+            "forensic_integrity": FORENSIC_INTEGRITY_VERSION,
+            "preamble": cls.is_preamble(assistant_text),
+            "postamble": cls.is_postamble(assistant_text),
+        }

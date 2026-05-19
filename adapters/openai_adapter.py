@@ -168,22 +168,43 @@ class OpenAIAdapter(BaseAdapter):
 
         return stats
 
+    def _distill_and_sign_turn(
+        self,
+        user_text: str,
+        assistant_text: str,
+        timestamp: datetime,
+        source: str = "openai",
+    ) -> dict[str, str | bool]:
+        """Single signing path shared by ``write_turn`` and ``generate_forensic_receipt``."""
+        return ContextCleaner.distill_and_sign(
+            user_text,
+            assistant_text,
+            timestamp,
+            source,
+        )
+
     def generate_forensic_receipt(
         self,
         user_text: str,
         timestamp: datetime,
         source: str = "openai",
+        *,
+        assistant_text: str = "",
     ) -> dict[str, str | bool]:
-        """Create a deterministic forensic anchor (receipt_id) for provenance."""
-        seed = f"{user_text}|{timestamp.isoformat()}|{source}"
-        receipt_hash = hashlib.sha256(seed.encode("utf-8")).hexdigest()
-        integrity = "1.0"
-        receipt_id = f"urn:synapse:receipt:{receipt_hash}"
+        """Create a deterministic forensic anchor using the same payload as ``write_turn``.
+
+        Legacy callers may invoke ``generate_forensic_receipt(user_text, timestamp, source)``
+        without ``assistant_text``; an empty assistant body is distilled and signed.
+        """
+        signed = self._distill_and_sign_turn(user_text, assistant_text, timestamp, source)
         return {
-            "receipt_id": receipt_id,
-            "forensic_receipt": integrity,
+            "receipt_id": signed["receipt_id"],
+            "forensic_receipt": signed["forensic_receipt"],
             "provenance": source,
-            "integrity_version": integrity,
+            "integrity_version": signed["forensic_integrity"],
+            "signature_hex": signed["signature_hex"],
+            "structural_signal": signed["structural_signal"],
+            "prose_tax_redacted": signed["prose_tax_redacted"],
             "audit_ready": True,
         }
 
@@ -213,31 +234,24 @@ class OpenAIAdapter(BaseAdapter):
         convo_hash = self._content_hash(original_convo_id)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}-{convo_hash}-{content_hash}.md"
 
-        has_preamble = ContextCleaner.is_preamble(assistant_text)
-        has_postamble = ContextCleaner.is_postamble(assistant_text)
-        structural_signal = ContextCleaner.distill_signal(assistant_text)
-        prose_tax_redacted = not ContextCleaner.is_clean(assistant_text) or (
-            structural_signal.strip() != assistant_text.strip()
-        )
-
-        receipt = self.generate_forensic_receipt(user_text, timestamp, "openai")
-        receipt_id = receipt["receipt_id"]
+        signed = self._distill_and_sign_turn(user_text, assistant_text, timestamp, "openai")
 
         os.makedirs(self.output_path, exist_ok=True)
 
         metadata = {
-            "uuid": receipt_id,
-            "receipt_id": receipt_id,
-            "forensic_receipt": receipt["forensic_receipt"],
-            "forensic_integrity": receipt["integrity_version"],
+            "uuid": signed["uuid"],
+            "receipt_id": signed["receipt_id"],
+            "signature_hex": signed["signature_hex"],
+            "forensic_receipt": signed["forensic_receipt"],
+            "forensic_integrity": signed["forensic_integrity"],
             "source": "gpt_export",
             "model": model,
             "original_timestamp": timestamp.isoformat(),
-            "prose_tax_redacted": prose_tax_redacted,
-            "structural_signal": structural_signal,
+            "prose_tax_redacted": signed["prose_tax_redacted"],
+            "structural_signal": signed["structural_signal"],
             "original_convo_id": original_convo_id,
-            "preamble": has_preamble,
-            "postamble": has_postamble,
+            "preamble": signed["preamble"],
+            "postamble": signed["postamble"],
         }
         body = f"### User\n{user_text}\n\n### Assistant\n{assistant_text}"
         post = frontmatter.Post(content=body, **metadata)

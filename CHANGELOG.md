@@ -6,6 +6,101 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.37.1] - 2026-05-19 (verify read path, continuous permissions, vault passphrase)
+
+### Fixed
+- **`_load_public_key_bytes`**: Removed **`ensure_signing_keypair`** fallback — verification never writes keys; missing public material raises **`FileNotFoundError`** → **`verify_signature`** logs and returns **`False`**.
+- **`_load_private_key`**: **`_assert_private_key_owner_only`** runs on **every** load (POSIX group/world bits → **`PermissionError`** with 0o600 guidance).
+- **`ensure_signing_keypair`**: Optional **`SYNAPSE_VAULT_PASSPHRASE`** encrypts the private PEM via **`BestAvailableEncryption`**; when unset, logs a visible warning and relies on **0o600** owner-only permissions.
+
+### Added
+- Tests that verification and public-key reads do not create `vault/keys/` files, plus passphrase encryption round-trip.
+
+## [0.37.0] - 2026-05-19 (signing payload v2, API restore, key gates)
+
+### Fixed
+- **`generate_forensic_receipt`**: Restored legacy signature **`(user_text, timestamp, source, *, assistant_text="")`** for three-argument callers; empty assistant text is supported.
+- **`_signing_payload`**: Canonical bytes are now **sorted JSON** (newline-safe; prevents field injection via embedded newlines). **Breaking** for signatures produced before this release — re-ingest to refresh `signature_hex`.
+- **`_load_private_key`**: Always invokes **`ensure_signing_keypair`** first so the anti-orphan guard runs before any private-key read.
+- **`ensure_signing_keypair`**: **`_enforce_private_key_permissions`** halts with **`PermissionError`** when the private key remains group/world-readable after `chmod`; chmod failures are logged.
+
+### Added
+- Tests for legacy receipt API, JSON payload injection safety, and Unix permission enforcement.
+
+## [0.36.7] - 2026-05-19 (non-destructive keypair validation)
+
+### Fixed
+- **`_validate_signing_keypair_on_disk`**: Removed automatic key deletion on validation failure. Only **`InvalidSignature`** / **`ValueError`** during the smoke sign/verify pass raise the concurrent-init **`RuntimeError`**; **`PermissionError`**, **`FileNotFoundError`**, and other read errors propagate without unlinking files (prevents orphaning historical signatures).
+- **`ensure_signing_keypair`**: **`os.chmod`** failures are **`_logger.warning`** instead of silent no-ops.
+
+## [0.36.6] - 2026-05-19 (keypair TOCTOU validation, contract user_text)
+
+### Fixed
+- **`ensure_signing_keypair`**: After atomic writes, reloads keys from disk, signs a smoke payload (`b"test"`), and verifies round-trip. On cryptographic mismatch, raises **`RuntimeError`** (concurrent-init race fail-closed).
+- **`_structural_contract`**: **`metadata`** / **`provenance`** now include **`user_text`** and **`timestamp`** (plus existing **`receipt_id`**, **`structural_signal`**, **`signature_hex`**) so clients can run **`verify_signature`** without parsing document bodies. **`user_text`** is taken from Chroma metadata when present, else parsed from `### User` / `### Assistant` Markdown sections.
+
+### Added
+- Tests for keypair validation cleanup and structural-contract verification fields.
+
+## [0.36.5] - 2026-05-19 (verify_signature except order, adapter key isolation)
+
+### Fixed
+- **`ContextCleaner.verify_signature`**: **`FileNotFoundError`** / permission handlers are evaluated **before** **`OSError`** so missing key files log a warning instead of being swallowed silently (`FileNotFoundError` subclasses `OSError`).
+
+### Changed
+- **`tests/test_openai_adapter_forensic`**: Forensic adapter tests set **`SYNAPSE_KEYS_DIR`** to a unique **`tmp_path`** directory and assert production **`vault/keys/`** mtimes are unchanged.
+
+## [0.36.4] - 2026-05-19 (verify_signature contract, provenance test)
+
+### Fixed
+- **`ContextCleaner.verify_signature`**: The full public-key read and verify path is wrapped in **`try/except`**; **`PermissionError`**, **`FileNotFoundError`**, and key-related **`RuntimeError`** log a **`logging.warning`** and return **`False`** (never crash on the read path).
+- **`tests/test_mcp_server`**: Provenance isolation calls **`_structural_contract`** directly (no JSON round-trip), mutates **`metadata["prose_tax_redacted"]`**, and asserts **`provenance`** stays unchanged.
+
+## [0.36.3] - 2026-05-19 (Signing keys — same-dir atomic writes, permission errors)
+
+### Fixed
+- **`core/context_cleaner`**: Atomic key writes always create temp files **inside** the target `vault/keys/` directory (never the system temp dir), with a guard that refuses cross-directory replace (avoids Windows **EXDEV**).
+- **`core/context_cleaner`**: Key reads use **`_read_key_bytes` / `_read_key_text`**; **`PermissionError`** becomes a clear **`RuntimeError`** for ingest and MCP when `vault/keys/` is not readable.
+
+### Added
+- Tests for same-directory `mkstemp` and permission-denied read path.
+
+## [0.36.2] - 2026-05-19 (Signing keys — absolute paths, anti-orphan, atomic writes)
+
+### Fixed
+- **`core/context_cleaner`**: `vault/keys/` resolves to an **absolute** path anchored at the repository root (via `__file__`), so `main.py` ingest and `mcp_server` always use the same key files regardless of CWD. `SYNAPSE_KEYS_DIR` overrides are also normalized with `os.path.abspath`.
+- **`ensure_signing_keypair`**: Raises **`RuntimeError`** when only one of `sovereign_signing.key` / `.pub` exists — never silently regenerates the missing half (prevents signature orphaning).
+- **Key creation**: Private and public keys are written **atomically** (temp file + `os.replace`) so crashes cannot leave a mismatched pair.
+
+### Added
+- **`resolve_keys_dir()`** helper and tests for absolute resolution, orphan detection, and key lifecycle idempotency.
+
+## [0.36.1] - 2026-05-19 (Forensic validation — full signal, provenance isolation)
+
+### Fixed
+- **`mcp_server/server.py`**: Structural Contracts keep the **full** `structural_signal` in `metadata` and `distilled_signal` for Ed25519 verification; only `distilled_signal_excerpt` is capped for display (`DISPLAY_SUMMARY_MAX`).
+- **`mcp_server/server.py`**: `provenance` is now a **`copy.deepcopy`** of `metadata` so downstream mutations cannot corrupt the ledger view.
+- **`adapters/openai_adapter`**: `generate_forensic_receipt` requires `assistant_text` and shares `_distill_and_sign_turn` with `write_turn` so signatures match ingest.
+
+### Added
+- **`tests/test_openai_adapter_forensic.py`**: Receipt/signature alignment between `generate_forensic_receipt` and `write_turn`.
+- **MCP tests**: Full-length structural signal and provenance deep-copy isolation.
+
+## [0.36.0] - 2026-05-16 (Post 7.2 — Ed25519 signing & distill_and_sign)
+
+### Added
+- **`ContextCleaner.distill_and_sign`**: Distills assistant prose tax, computes deterministic SHA-256 `receipt_id` / `uuid`, and signs the canonical payload with **Ed25519**. **`ensure_signing_keypair`** creates `vault/keys/sovereign_signing.key` and `.pub` on first use (`SYNAPSE_KEYS_DIR` override).
+- **`ContextCleaner.verify_signature`**: Local verification of `signature_hex` against vault public key material.
+- **Dependency**: `cryptography>=42.0.0` for Ed25519.
+
+### Changed
+- **`adapters/openai_adapter`**: `write_turn` routes turns through `distill_and_sign`; frontmatter includes `signature_hex`, `prose_tax_redacted`, and forensic fields.
+- **`mcp_server/server.py`**: Structural Contracts expose `signature_hex` and `structural_signal` in `metadata` / `provenance`.
+- **`schemas/synapse_manifest.json`**: Documents `signature_hex` field.
+
+### Security
+- **`vault/keys/*.key`**, **`vault/keys/*.pub`**, and **`vault_backup*/`** added to `.gitignore`.
+
 ## [0.35.1] - 2026-05-16 (Tests — embed_text mocks & CLI subprocess)
 
 ### Fixed (tests)
