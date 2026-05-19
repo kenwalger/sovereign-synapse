@@ -42,6 +42,7 @@ DEFAULT_KEYS_DIR = os.path.abspath(os.path.join(_REPO_ROOT, "vault", "keys"))
 PRIVATE_KEY_FILE = "sovereign_signing.key"
 PUBLIC_KEY_FILE = "sovereign_signing.pub"
 FORENSIC_INTEGRITY_VERSION = "1.0"
+_KEYPAIR_SMOKE_PAYLOAD = b"test"
 _logger = logging.getLogger(__name__)
 
 
@@ -123,6 +124,45 @@ def _atomic_write_text(path: Path, text: str) -> None:
     _atomic_write_bytes(path, text.encode("utf-8"))
 
 
+def _validate_signing_keypair_on_disk(directory: Path) -> None:
+    """Round-trip sign/verify keys read from disk; fail closed on mismatch."""
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+
+    priv_path = directory / PRIVATE_KEY_FILE
+    pub_path = directory / PUBLIC_KEY_FILE
+
+    def _remove_corrupted_pair() -> None:
+        for path in (priv_path, pub_path):
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    try:
+        priv_data = _read_key_bytes(priv_path, "Ed25519 private signing key")
+        private_key = serialization.load_pem_private_key(priv_data, password=None)
+        pub_bytes = bytes.fromhex(
+            _read_key_text(pub_path, "Ed25519 public signing key").strip(),
+        )
+        public_key = Ed25519PublicKey.from_public_bytes(pub_bytes)
+        signature = private_key.sign(_KEYPAIR_SMOKE_PAYLOAD)
+        public_key.verify(signature, _KEYPAIR_SMOKE_PAYLOAD)
+    except InvalidSignature as exc:
+        _remove_corrupted_pair()
+        raise RuntimeError(
+            "Concurrent key initialization race detected. "
+            "Incomplete or mismatched key pair written.",
+        ) from exc
+    except Exception as exc:
+        _remove_corrupted_pair()
+        raise RuntimeError(
+            "Concurrent key initialization race detected. "
+            "Incomplete or mismatched key pair written.",
+        ) from exc
+
+
 def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
     """Create an Ed25519 key pair under *keys_dir* when none exists.
 
@@ -174,6 +214,7 @@ def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
         os.chmod(priv_path, 0o600)
     except OSError:
         pass
+    _validate_signing_keypair_on_disk(directory)
     return directory
 
 

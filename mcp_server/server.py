@@ -155,6 +155,29 @@ def _prose_tax_redacted_from_metadata(metadata: dict[str, Any], body: str) -> bo
     return not ContextCleaner.is_clean(body)
 
 
+_USER_TEXT_SECTION = re.compile(
+    r"^### User\s*\r?\n(.*?)(?:\r?\n\r?\n### Assistant|\Z)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _user_text_from_metadata_and_body(metadata: dict[str, Any], body: str) -> str:
+    """Resolve canonical user prompt from Chroma metadata or synapse Markdown body."""
+    stored = metadata.get("user_text")
+    if isinstance(stored, str) and stored.strip():
+        return stored.strip()
+    match = _USER_TEXT_SECTION.search(body or "")
+    if match:
+        return match.group(1).strip()
+    return ""
+
+
+def _contract_timestamp(metadata: dict[str, Any]) -> str:
+    """ISO timestamp for verify_signature (metadata.timestamp or original_timestamp)."""
+    raw = metadata.get("timestamp") or metadata.get("original_timestamp") or ""
+    return str(raw)
+
+
 def _display_summary(text: str, max_len: int = DISPLAY_SUMMARY_MAX) -> str:
     """Short preview for hosts; never used for signature verification."""
     if not text:
@@ -181,6 +204,8 @@ def _structural_contract(
     receipt_id = str(metadata.get("receipt_id") or metadata.get("uuid") or "")
     forensic_receipt = _forensic_receipt_from_metadata(metadata)
     prose_tax_redacted = _prose_tax_redacted_from_metadata(metadata, body)
+    user_text = _user_text_from_metadata_and_body(metadata, body)
+    timestamp = _contract_timestamp(metadata)
     asset_metadata = {
         "uuid": str(metadata.get("uuid", receipt_id)),
         "receipt_id": receipt_id,
@@ -188,9 +213,11 @@ def _structural_contract(
         "forensic_receipt": forensic_receipt,
         "prose_tax_redacted": prose_tax_redacted,
         "structural_signal": canonical_signal,
+        "user_text": user_text,
+        "timestamp": timestamp,
         "source": str(metadata.get("source", "")),
         "model": str(metadata.get("model", "")),
-        "original_timestamp": str(metadata.get("original_timestamp", "")),
+        "original_timestamp": timestamp,
         "forensic_integrity": str(metadata.get("forensic_integrity", forensic_receipt)),
     }
     ledger_provenance = copy.deepcopy(asset_metadata)

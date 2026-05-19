@@ -310,6 +310,35 @@ def test_search_synapses_returns_structural_contract():
     assert first["metadata"]["signature_hex"] == "ab" * 64
     assert first["metadata"]["structural_signal"] == "BLE accelerometer setup."
     assert first["provenance"]["signature_hex"] == "ab" * 64
+    assert first["metadata"]["timestamp"] == _SYNAPSE_METAS[1]["original_timestamp"]
+    assert first["provenance"]["timestamp"] == first["metadata"]["timestamp"]
+
+
+def test_structural_contract_includes_user_text_and_timestamp_for_verification():
+    """Contract must expose user_text, timestamp, receipt_id, and structural_signal."""
+    chroma_meta = {
+        **_SYNAPSE_METAS[1],
+        "uuid": "urn:synapse:receipt:abc123",
+        "receipt_id": "urn:synapse:receipt:abc123",
+        "structural_signal": "BLE accelerometer setup.",
+        "signature_hex": "ab" * 64,
+    }
+    document = (
+        "### User\nHow do I stream raw accelerometer data?\n\n"
+        "### Assistant\nBLE accelerometer setup."
+    )
+    response = _structural_contract(
+        "urn:synapse:receipt:abc123#0",
+        document,
+        chroma_meta,
+        0.05,
+    )
+
+    assert response["metadata"]["user_text"] == "How do I stream raw accelerometer data?"
+    assert response["provenance"]["user_text"] == response["metadata"]["user_text"]
+    assert response["metadata"]["timestamp"] == _SYNAPSE_METAS[1]["original_timestamp"]
+    assert response["metadata"]["receipt_id"] == "urn:synapse:receipt:abc123"
+    assert response["metadata"]["structural_signal"] == "BLE accelerometer setup."
 
 
 def test_structural_contract_preserves_full_structural_signal():

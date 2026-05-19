@@ -99,11 +99,20 @@
             "source": { "type": "string" },
             "model": { "type": "string" },
             "original_timestamp": { "type": "string" },
+            "timestamp": {
+              "type": "string",
+              "description": "ISO-8601 turn time for verify_signature (alias of original_timestamp)."
+            },
+            "user_text": {
+              "type": "string",
+              "description": "Original user prompt; required for verify_signature without parsing the body."
+            },
             "forensic_integrity": { "type": "string" },
             "prose_tax_redacted": {},
             "signature_hex": { "type": "string" },
             "structural_signal": { "type": "string" },
-            "uuid": { "type": "string" }
+            "uuid": { "type": "string" },
+            "receipt_id": { "type": "string" }
           }
         },
         "distance": { "type": ["number", "null"] }

@@ -17,6 +17,7 @@ from core.context_cleaner import (
     _atomic_write_bytes,
     _default_keys_dir,
     _read_key_bytes,
+    _validate_signing_keypair_on_disk,
     ensure_signing_keypair,
     resolve_keys_dir,
 )
@@ -135,6 +136,18 @@ def test_read_key_bytes_raises_friendly_error_on_permission_denied(tmp_path):
         pytest.raises(RuntimeError, match="permission denied"),
     ):
         _read_key_bytes(priv_path, "Ed25519 private signing key")
+
+
+def test_validate_signing_keypair_on_disk_rejects_mismatch_and_cleans_up(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    (keys_dir / PUBLIC_KEY_FILE).write_text("ff" * 32, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="race detected"):
+        _validate_signing_keypair_on_disk(keys_dir)
+
+    assert not (keys_dir / PRIVATE_KEY_FILE).is_file()
+    assert not (keys_dir / PUBLIC_KEY_FILE).is_file()
 
 
 def test_ensure_signing_keypair_creates_files(tmp_path):
