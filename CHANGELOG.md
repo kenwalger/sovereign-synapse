@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.37.1] - 2026-05-19 (verify read path, continuous permissions, vault passphrase)
+
+### Fixed
+- **`_load_public_key_bytes`**: Removed **`ensure_signing_keypair`** fallback — verification never writes keys; missing public material raises **`FileNotFoundError`** → **`verify_signature`** logs and returns **`False`**.
+- **`_load_private_key`**: **`_assert_private_key_owner_only`** runs on **every** load (POSIX group/world bits → **`PermissionError`** with 0o600 guidance).
+- **`ensure_signing_keypair`**: Optional **`SYNAPSE_VAULT_PASSPHRASE`** encrypts the private PEM via **`BestAvailableEncryption`**; when unset, logs a visible warning and relies on **0o600** owner-only permissions.
+
+### Added
+- Tests that verification and public-key reads do not create `vault/keys/` files, plus passphrase encryption round-trip.
+
 ## [0.37.0] - 2026-05-19 (signing payload v2, API restore, key gates)
 
 ### Fixed

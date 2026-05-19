@@ -17,6 +17,8 @@ from core.context_cleaner import (
     _atomic_write_bytes,
     _default_keys_dir,
     _enforce_private_key_permissions,
+    _load_private_key,
+    _load_public_key_bytes,
     _read_key_bytes,
     _signing_payload,
     _validate_signing_keypair_on_disk,
@@ -158,8 +160,60 @@ def test_enforce_private_key_permissions_rejects_world_readable(tmp_path):
     priv_path = keys_dir / PRIVATE_KEY_FILE
     priv_path.chmod(0o644)
 
-    with pytest.raises(PermissionError, match="world-readable"):
+    with pytest.raises(PermissionError, match="0o600"):
         _enforce_private_key_permissions(priv_path)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Unix mode bits unavailable on Windows")
+def test_load_private_key_enforces_permissions_on_every_read(tmp_path):
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+    (keys_dir / PRIVATE_KEY_FILE).chmod(0o644)
+
+    with pytest.raises(PermissionError, match="0o600"):
+        _load_private_key(keys_dir)
+
+
+def test_verify_signature_missing_public_key_does_not_create_keys(tmp_path, caplog):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+    ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
+
+    with caplog.at_level("WARNING"):
+        ok = ContextCleaner.verify_signature(
+            "aa" * 64,
+            receipt_id="urn:synapse:receipt:x",
+            structural_signal="signal",
+            user_text="user",
+            timestamp=ts,
+            keys_dir=keys_dir,
+        )
+
+    assert ok is False
+    assert not (keys_dir / PRIVATE_KEY_FILE).exists()
+    assert not (keys_dir / PUBLIC_KEY_FILE).exists()
+    assert any("Cannot verify Sovereign Synapse signature" in record.message for record in caplog.records)
+
+
+def test_load_public_key_bytes_does_not_create_keys(tmp_path):
+    keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        _load_public_key_bytes(keys_dir)
+
+    assert not (keys_dir / PRIVATE_KEY_FILE).exists()
+    assert not (keys_dir / PUBLIC_KEY_FILE).exists()
+
+
+def test_ensure_signing_keypair_encrypts_with_vault_passphrase(tmp_path, monkeypatch):
+    monkeypatch.setenv("SYNAPSE_VAULT_PASSPHRASE", "test-vault-secret")
+    keys_dir = tmp_path / "keys"
+    ensure_signing_keypair(keys_dir)
+
+    pem = (keys_dir / PRIVATE_KEY_FILE).read_bytes()
+    assert b"ENCRYPTED" in pem
+    assert _load_private_key(keys_dir) is not None
 
 
 def test_validate_signing_keypair_on_disk_raises_on_mismatch_without_deleting(tmp_path):
@@ -224,15 +278,10 @@ def test_distill_and_sign_returns_forensic_fields(tmp_path):
 
 def test_verify_signature_logs_warning_on_missing_public_key(tmp_path, caplog):
     keys_dir = tmp_path / "keys"
+    keys_dir.mkdir(parents=True)
     ts = datetime(2025, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
 
-    with (
-        patch(
-            "core.context_cleaner._load_public_key_bytes",
-            side_effect=FileNotFoundError(2, "sovereign_signing.pub"),
-        ),
-        caplog.at_level("WARNING"),
-    ):
+    with caplog.at_level("WARNING"):
         ok = ContextCleaner.verify_signature(
             "aa" * 64,
             receipt_id="urn:synapse:receipt:x",

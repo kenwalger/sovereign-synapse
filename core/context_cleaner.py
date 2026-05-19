@@ -135,8 +135,36 @@ def _private_key_is_group_or_world_accessible(priv_path: Path) -> bool:
         return True
 
 
+def _assert_private_key_owner_only(priv_path: Path) -> None:
+    """Halt when POSIX mode bits expose the private key to group/other."""
+    if _private_key_is_group_or_world_accessible(priv_path):
+        raise PermissionError(
+            "Private key file permissions are too open. Must be owner-only (0o600).",
+        )
+
+
+def _vault_passphrase_bytes() -> bytes | None:
+    raw = os.environ.get("SYNAPSE_VAULT_PASSPHRASE", "").strip()
+    return raw.encode("utf-8") if raw else None
+
+
+def _private_key_encryption_algorithm() -> Any:
+    from cryptography.hazmat.primitives import serialization
+
+    passphrase = _vault_passphrase_bytes()
+    if passphrase:
+        return serialization.BestAvailableEncryption(passphrase)
+    return serialization.NoEncryption()
+
+
+def _load_pem_private_key(data: bytes) -> Any:
+    from cryptography.hazmat.primitives import serialization
+
+    return serialization.load_pem_private_key(data, password=_vault_passphrase_bytes())
+
+
 def _enforce_private_key_permissions(priv_path: Path) -> None:
-    """Require owner-only private key permissions; halt if the key stays exposed."""
+    """Require owner-only private key permissions after initial write."""
     try:
         os.chmod(priv_path, 0o600)
     except OSError as exc:
@@ -146,12 +174,7 @@ def _enforce_private_key_permissions(priv_path: Path) -> None:
             exc,
         )
 
-    if _private_key_is_group_or_world_accessible(priv_path):
-        raise PermissionError(
-            f"Private signing key at {priv_path} is group- or world-readable. "
-            "Refusing to continue with an exposed plaintext key. "
-            "chmod 600 the file or fix ACLs, then retry.",
-        )
+    _assert_private_key_owner_only(priv_path)
 
 
 def _validate_signing_keypair_on_disk(directory: Path) -> None:
@@ -170,7 +193,7 @@ def _validate_signing_keypair_on_disk(directory: Path) -> None:
     pub_path = directory / PUBLIC_KEY_FILE
 
     priv_data = _read_key_bytes(priv_path, "Ed25519 private signing key")
-    private_key = serialization.load_pem_private_key(priv_data, password=None)
+    private_key = _load_pem_private_key(priv_data)
     pub_bytes = bytes.fromhex(
         _read_key_text(pub_path, "Ed25519 public signing key").strip(),
     )
@@ -222,11 +245,18 @@ def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
             "existing signatures."
         )
 
+    if _vault_passphrase_bytes() is None:
+        _logger.warning(
+            "SYNAPSE_VAULT_PASSPHRASE is unset; writing an unencrypted private key "
+            "at %s protected only by owner-only filesystem permissions (chmod 0o600).",
+            priv_path,
+        )
+
     private_key = Ed25519PrivateKey.generate()
     priv_bytes = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+        encryption_algorithm=_private_key_encryption_algorithm(),
     )
     pub_bytes = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -240,18 +270,16 @@ def ensure_signing_keypair(keys_dir: Path | str | None = None) -> Path:
 
 
 def _load_private_key(keys_dir: Path) -> Any:
-    from cryptography.hazmat.primitives import serialization
-
     ensure_signing_keypair(keys_dir)
     priv_path = keys_dir / PRIVATE_KEY_FILE
+    _assert_private_key_owner_only(priv_path)
     data = _read_key_bytes(priv_path, "Ed25519 private signing key")
-    return serialization.load_pem_private_key(data, password=None)
+    return _load_pem_private_key(data)
 
 
 def _load_public_key_bytes(keys_dir: Path) -> bytes:
+    """Load the public key bytes; never creates keys (verification read path)."""
     pub_path = keys_dir / PUBLIC_KEY_FILE
-    if not pub_path.is_file():
-        ensure_signing_keypair(keys_dir)
     return bytes.fromhex(_read_key_text(pub_path, "Ed25519 public signing key").strip())
 
 
