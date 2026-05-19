@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [0.36.1] - 2026-05-19 (Forensic validation — full signal, provenance isolation)
+
+### Fixed
+- **`mcp_server/server.py`**: Structural Contracts keep the **full** `structural_signal` in `metadata` and `distilled_signal` for Ed25519 verification; only `distilled_signal_excerpt` is capped for display (`DISPLAY_SUMMARY_MAX`).
+- **`mcp_server/server.py`**: `provenance` is now a **`copy.deepcopy`** of `metadata` so downstream mutations cannot corrupt the ledger view.
+- **`adapters/openai_adapter`**: `generate_forensic_receipt` requires `assistant_text` and shares `_distill_and_sign_turn` with `write_turn` so signatures match ingest.
+
+### Added
+- **`tests/test_openai_adapter_forensic.py`**: Receipt/signature alignment between `generate_forensic_receipt` and `write_turn`.
+- **MCP tests**: Full-length structural signal and provenance deep-copy isolation.
+
 ## [0.36.0] - 2026-05-16 (Post 7.2 — Ed25519 signing & distill_and_sign)
 
 ### Added

@@ -168,26 +168,38 @@ class OpenAIAdapter(BaseAdapter):
 
         return stats
 
-    def generate_forensic_receipt(
+    def _distill_and_sign_turn(
         self,
         user_text: str,
+        assistant_text: str,
         timestamp: datetime,
         source: str = "openai",
-        assistant_text: str = "",
     ) -> dict[str, str | bool]:
-        """Create a deterministic forensic anchor; delegates to ``distill_and_sign``."""
-        signed = ContextCleaner.distill_and_sign(
+        """Single signing path shared by ``write_turn`` and ``generate_forensic_receipt``."""
+        return ContextCleaner.distill_and_sign(
             user_text,
             assistant_text,
             timestamp,
             source,
         )
+
+    def generate_forensic_receipt(
+        self,
+        user_text: str,
+        assistant_text: str,
+        timestamp: datetime,
+        source: str = "openai",
+    ) -> dict[str, str | bool]:
+        """Create a deterministic forensic anchor using the same payload as ``write_turn``."""
+        signed = self._distill_and_sign_turn(user_text, assistant_text, timestamp, source)
         return {
             "receipt_id": signed["receipt_id"],
             "forensic_receipt": signed["forensic_receipt"],
             "provenance": source,
             "integrity_version": signed["forensic_integrity"],
             "signature_hex": signed["signature_hex"],
+            "structural_signal": signed["structural_signal"],
+            "prose_tax_redacted": signed["prose_tax_redacted"],
             "audit_ready": True,
         }
 
@@ -217,12 +229,7 @@ class OpenAIAdapter(BaseAdapter):
         convo_hash = self._content_hash(original_convo_id)
         filename = f"{timestamp.strftime('%Y-%m-%d-%H%M')}-{slug}-{convo_hash}-{content_hash}.md"
 
-        signed = ContextCleaner.distill_and_sign(
-            user_text,
-            assistant_text,
-            timestamp,
-            "openai",
-        )
+        signed = self._distill_and_sign_turn(user_text, assistant_text, timestamp, "openai")
 
         os.makedirs(self.output_path, exist_ok=True)
 

@@ -8,7 +8,7 @@ Sovereign Synapse is an infrastructure-first engine designed to aggregate fragme
 ## Core Philosophy: Fiscal Architecture
 1. **Infrastructure Integrity:** All data remains on local silicon, moving from "Privacy as a Choice" to "Privacy as a Financial Strategy."
 2. **Prose Tax Elimination:** We strip conversational boilerplate at ingestion to reduce the "Reasoning Tax" on downstream inference. `ContextCleaner.is_clean()` flags turns with preamble/postamble; ingested synapses record `prose_tax_redacted` in frontmatter.
-3. **Forensic Traceability:** Every turn is distilled and **Ed25519-signed** at ingest via `ContextCleaner.distill_and_sign()`. A deterministic **`receipt_id`** (`urn:synapse:receipt:…` from SHA-256) is the primary **`uuid`**; `signature_hex` proves local provenance. Signing keys are created once under `vault/keys/` (gitignored). MCP `search_synapses` returns Structural Contracts with `signature_hex`, `prose_tax_redacted`, and `distilled_signal` (see `schemas/synapse_manifest.json`).
+3. **Forensic Traceability:** Every turn is distilled and **Ed25519-signed** at ingest via `ContextCleaner.distill_and_sign()`. A deterministic **`receipt_id`** (`urn:synapse:receipt:…` from SHA-256) is the primary **`uuid`**; `signature_hex` proves local provenance. Signing keys are created once under `vault/keys/` (gitignored). MCP `search_synapses` returns Structural Contracts with the **full** canonical `distilled_signal` (use `distilled_signal_excerpt` only for short previews), plus `signature_hex` and `prose_tax_redacted` (see `schemas/synapse_manifest.json`).
 
 ## The Sovereign Principles
 1. **Zero Cloud Leakage:** All data processing, embedding, and retrieval occurs on local silicon.

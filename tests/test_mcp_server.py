@@ -311,6 +311,60 @@ def test_search_synapses_returns_structural_contract():
     assert first["provenance"]["signature_hex"] == "ab" * 64
 
 
+def test_structural_contract_preserves_full_structural_signal():
+    """Canonical structural_signal must not be truncated (signature verification)."""
+    long_signal = "x" * 5000
+    col = _make_collection_mock()
+    col.query.return_value["metadatas"] = [[
+        {
+            **_SYNAPSE_METAS[1],
+            "uuid": "urn:synapse:receipt:long",
+            "receipt_id": "urn:synapse:receipt:long",
+            "structural_signal": long_signal,
+            "signature_hex": "cd" * 64,
+        },
+    ]]
+    col.query.return_value["documents"] = [[long_signal]]
+    fake_embed = [0.1] * 1024
+
+    with (
+        patch("mcp_server.server._get_collection", return_value=col),
+        patch("mcp_server.server._embed", return_value=fake_embed),
+    ):
+        raw = search_synapses(query="wearable", n_results=1)
+
+    first = json.loads(raw)["results"][0]
+    assert len(first["metadata"]["structural_signal"]) == 5000
+    assert len(first["distilled_signal"]) == 5000
+    assert len(first["distilled_signal_excerpt"]) == 2000
+    assert first["metadata"]["structural_signal"] == first["distilled_signal"]
+
+
+def test_structural_contract_provenance_is_deep_copy():
+    """Mutating provenance must not alter metadata (immutable ledger view)."""
+    col = _make_collection_mock()
+    col.query.return_value["metadatas"] = [[
+        {
+            **_SYNAPSE_METAS[1],
+            "uuid": "urn:synapse:receipt:abc123",
+            "receipt_id": "urn:synapse:receipt:abc123",
+            "structural_signal": "signal text",
+        },
+    ]]
+    fake_embed = [0.1] * 1024
+
+    with (
+        patch("mcp_server.server._get_collection", return_value=col),
+        patch("mcp_server.server._embed", return_value=fake_embed),
+    ):
+        raw = search_synapses(query="wearable", n_results=1)
+
+    first = json.loads(raw)["results"][0]
+    assert first["metadata"] is not first["provenance"]
+    first["provenance"]["signature_hex"] = "mutated"
+    assert first["metadata"]["signature_hex"] != "mutated"
+
+
 def test_search_synapses_n_results_upper_bound():
     """n_results > 50 must be silently clamped; no error raised."""
     col = _make_collection_mock()

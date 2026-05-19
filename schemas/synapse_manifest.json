@@ -85,7 +85,14 @@
         },
         "synapse_id": { "type": "string" },
         "chunk_id": { "type": "string" },
-        "distilled_signal": { "type": "string" },
+        "distilled_signal": {
+          "type": "string",
+          "description": "Full canonical structural signal (matches metadata.structural_signal)."
+        },
+        "distilled_signal_excerpt": {
+          "type": "string",
+          "description": "Optional display-only preview; not used for Ed25519 verification."
+        },
         "provenance": {
           "type": "object",
           "properties": {
